@@ -32,7 +32,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.13.3 
+          terraform_version: "1.13.4"
 
       - name: Cache Terraform Plugins
         uses: actions/cache@v4
@@ -69,7 +69,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.6.7
+          terraform_version: "1.13.4"
 
       - name: Cache Terraform Plugins
         uses: actions/cache@v4
