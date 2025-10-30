@@ -1,0 +1,53 @@
+# Created .github/workflows folder and scaffold initial workflows
+# Pipeline documented in /docs/ci.md
+name: Infrastructure CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'devops-bootcamp/infrastructure/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'devops-bootcamp/infrastructure/**'
+  workflow_dispatch:
+
+jobs:
+  dev-only:
+    # Fast job: only runs make deploy-dev-only if no backend or AMI (packer/bootstrap) changes detected
+    name: 'Terraform Dev Only (Fast)'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+      - name: Deploy Dev Only (Fast)
+        run: make deploy-dev-only
+        working-directory: devops-bootcamp/infrastructure
+
+  all:
+    # Full pipeline job: runs any time there's a main push or manual dispatch
+    name: 'Full Pipeline (all: packer → bootstrap → dev)'
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.ref == 'refs/heads/main' 
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+      - name: Full Pipeline (AMI + bootstrap + dev)
+        run: make all
+        working-directory: devops-bootcamp/infrastructure
