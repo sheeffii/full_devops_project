@@ -108,8 +108,20 @@ variable "subnet_cidr" {
 
 variable "private_key_path" {
   type        = string
-  description = "Path to the private key file for remote-exec provisioner (e.g., '~/.ssh/id_rsa'). Leave empty to skip."
-  default     = "~/.ssh/id_rsa"
+  description = "Path to the private key file for remote-exec provisioner (e.g., '/home/alice/.ssh/id_rsa'). Leave empty to skip. Do NOT use '~' expansion."
+  default     = ""
+}
+
+variable "private_key_content" {
+  type        = string
+  description = "(Optional) The private key content as a string. If provided this will be used instead of reading a file. Useful for CI or when passing via secure vars."
+  default     = ""
+}
+
+variable "enable_provisioner" {
+  type        = bool
+  description = "When true, enables the remote-exec provisioner that connects to the instance. Set to false in CI to avoid trying to SSH from runners."
+  default     = false
 }
 
 # variables.tf

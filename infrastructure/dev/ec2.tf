@@ -63,6 +63,9 @@ resource "aws_eip_association" "eip_assoc" {
 
 # Simple remote-exec (like your older code)
 resource "null_resource" "after_eip_setup" {
+  # Only enable this provisioner when explicitly requested (avoid failures in CI runners)
+  count = var.enable_provisioner ? 1 : 0
+
   depends_on = [aws_eip_association.eip_assoc]
 
   triggers = {
@@ -80,11 +83,17 @@ resource "null_resource" "after_eip_setup" {
     ]
 
     connection {
-      type        = "ssh"
-      user        = "ec2-user"
-      private_key = file("~/.ssh/id_rsa")  # Fixed standard path—team has this
-      host        = aws_eip.elastic_ip.public_ip
-      timeout     = "4m"
+      type = "ssh"
+      user = "ec2-user"
+
+      # Use provided key content when available, otherwise read from a file path.
+      # The file() call is only used when `private_key_path` is non-empty and the file exists
+      private_key = var.private_key_content != "" ? var.private_key_content : (
+        var.private_key_path != "" && fileexists(var.private_key_path) ? file(var.private_key_path) : ""
+      )
+
+      host    = aws_eip.elastic_ip.public_ip
+      timeout = "4m"
     }
   }
 }
