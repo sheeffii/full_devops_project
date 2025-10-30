@@ -31,7 +31,7 @@ jobs:
           aws-region: eu-central-1
       - name: Deploy Dev Only (Fast)
         run: make deploy-dev-only
-        working-directory: devops-bootcamp/infrastructure
+        working-directory: infrastructure
 
   all:
     # Full pipeline job: runs any time there's a main push or manual dispatch
@@ -50,4 +50,4 @@ jobs:
           aws-region: eu-central-1
       - name: Full Pipeline (AMI + bootstrap + dev)
         run: make all
-        working-directory: devops-bootcamp/infrastructure
+        working-directory: infrastructure
