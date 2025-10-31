@@ -77,6 +77,17 @@ deploy-dev-only:
 		-backend-config="region=$(REGION)" \
 		-backend-config="dynamodb_table=team7-dev-tf-lock"; \
 	cd $$DEV_ABS && terraform validate; \
+	# AUTO-UPDATE AMI FROM PACKER MANIFEST
+	@if [ -f ../packer/packer-manifest.json ]; then \
+		AMI_ID=$$(grep -o 'ami-[0-9a-f]\{8,17\}' ../packer/packer-manifest.json | head -1); \
+		if [ -n "$$AMI_ID" ]; then \
+			sed -i '/^ami_id\s*=/d' $(TFVARS) || true; \
+			echo "ami_id = \"$$AMI_ID\"" >> $(TFVARS); \
+			echo "✅ Auto-updated tfvars with new AMI: $$AMI_ID"; \
+		else \
+			echo "⚠️ No AMI in manifest—using tfvars as-is"; \
+		fi; \
+	fi; \
 	cd $$DEV_ABS && terraform apply -var-file=$(TFVARS) -auto-approve; \
 	echo "Dev deployment complete!"
 
