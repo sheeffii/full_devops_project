@@ -1,83 +1,76 @@
-# Infrastructure CI/CD Workflow
-# Fully optimized for Terraform + Packer + AWS
 name: Infrastructure CI/CD
-
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'infrastructure/**'
+    paths: [ 'infrastructure/**' ]  # Only if infra files change
   pull_request:
     branches: [ main ]
-    paths:
-      - 'infrastructure/**'
-  workflow_dispatch:
+    paths: [ 'infrastructure/**' ]
+  workflow_dispatch:  # Manual run button
 
 jobs:
-  # Terraform Dev Only Job
-  dev-only:
-    name: Terraform Dev Only (Fast)
+  # For PRs: Quick check (no deploy)
+  quick-check:
+    name: Quick Check (PR Only)
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.13.4"
-
-      - name: Cache Terraform Plugins
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: ~/.terraform.d/plugin-cache
-          key: ${{ runner.os }}-terraform-${{ hashFiles('infrastructure/**/*.tf') }}
-
-      - name: Cache Packer
-        uses: actions/cache@v4
+          key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }}  # Fast if unchanged
+      - uses: actions/cache@v4
         with:
           path: ~/.cache/packer
-          key: ${{ runner.os }}-packer-${{ hashFiles('infrastructure/packer/**/*.pkr.hcl') }}
-
-      - name: Validate Terraform (PR - no apply)
+          key: ${{ runner.os }}-packer-${{ hashFiles('infrastructure/packer/**/*.pkr.hcl') }}  # Fast if unchanged
+      - name: Check Code
         working-directory: ./infrastructure/dev
-        run: |
-          terraform init -backend=false
-          terraform validate -no-color
+        run: terraform init -backend=false && terraform validate -no-color
 
-  full-pipeline:
-    name: Full Pipeline (AMI → Bootstrap → Dev)
+  # For main/manual: AMI first
+  build-ami:
+    name: Build AMI (Fast if Cached)
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-central-1
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.13.4"
-
-      - name: Cache Terraform Plugins
-        uses: actions/cache@v4
-        with:
-          path: ~/.terraform.d/plugin-cache
-          key: ${{ runner.os }}-terraform-${{ hashFiles('infrastructure/**/*.tf') }}
-
-      - name: Cache Packer
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: ~/.cache/packer
           key: ${{ runner.os }}-packer-${{ hashFiles('infrastructure/packer/**/*.pkr.hcl') }}
-
-      - name: Run Full Pipeline
-        run: make all
+      - name: Make AMI
         working-directory: ./infrastructure
+        run: make packer-build
+
+  # Then deploy (waits for AMI)
+  do-deploy:
+    name: Deploy Everything
+    runs-on: ubuntu-latest
+    needs: build-ami  # Only if AMI done
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.4"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }}
+      - name: Deploy
+        working-directory: ./infrastructure
+        run: make deploy-testing  # Your bootstrap + dev (skips bootstrap if exists)
