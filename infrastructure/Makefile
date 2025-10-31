@@ -85,8 +85,13 @@ deploy-dev-only:
 # ─────────────────────────────────────────────────────────────────────────────
 deploy-testing:
 	@echo "Deploying testing (bootstrap + dev; skipping Packer)..."
-	@echo "Ensuring bootstrap backend exists..."
-	$(MAKE) bootstrap
+	@echo "Checking if bootstrap backend exists..."
+	@if aws s3 ls s3://team7-dev-tf-state >/dev/null 2>&1; then \
+		echo "✅ Bucket exists—skipping bootstrap!"; \
+	else \
+		echo "⚠️  Bucket missing—running bootstrap..."; \
+		$(MAKE) bootstrap; \
+	fi
 	$(MAKE) deploy-dev-only
 
 full-deploy: packer-build bootstrap deploy-dev-only ec2-ssm-connect
