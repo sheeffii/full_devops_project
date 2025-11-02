@@ -1,66 +1,69 @@
 name: Infrastructure CI/CD
-
 on:
   push:
     branches: [ main ]
-    paths: [ 'infrastructure/**' ]
+    paths: [ 'infrastructure/**' ]  # Only if infra files change
   pull_request:
     branches: [ main ]
     paths: [ 'infrastructure/**' ]
-  workflow_dispatch:
-    inputs:
-      action:
-        description: 'Action'
-        required: true
-        default: 'deploy'
-        type: choice
-        options:
-          - deploy
-          - destroy
+  workflow_dispatch:  # Manual run button
 
 jobs:
+  # For PRs: Quick check (no deploy)
   quick-check:
-    if: github.event_name == 'pull_request'
+    name: Quick Check (PR Only)
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.13.4"
-      - name: Validate
+      - uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }}  # Fast if unchanged
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/packer
+          key: ${{ runner.os }}-packer-${{ hashFiles('infrastructure/packer/**/*.pkr.hcl') }}  # Fast if unchanged
+      - name: Check Code
         working-directory: ./infrastructure/dev
-        run: terraform init -backend=false && terraform validate
+        run: terraform init -backend=false && terraform validate -no-color
 
+  # For main/manual: AMI first
   build-ami:
-    if: github.event_name != 'pull_request' && (github.event.inputs.action != 'destroy' || github.event.inputs.action == null)
+    name: Build AMI (Fast if Cached)
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-central-1 
+          aws-region: eu-central-1
       - uses: actions/cache@v4
         with:
           path: ~/.cache/packer
           key: ${{ runner.os }}-packer-${{ hashFiles('infrastructure/packer/**/*.pkr.hcl') }}
-      - name: Build AMI
+      - name: Make AMI
         working-directory: ./infrastructure
         run: make packer-build
 
+  # Then deploy (waits for AMI)
   do-deploy:
-    if: github.event_name != 'pull_request' && (github.event.inputs.action != 'destroy' || github.event.inputs.action == null)
-    needs: build-ami
+    name: Deploy Everything
     runs-on: ubuntu-latest
-    environment: dev
+    needs: build-ami  # Only if AMI done
+    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-central-1 
+          aws-region: eu-central-1
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.13.4"
@@ -70,25 +73,4 @@ jobs:
           key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }}
       - name: Deploy
         working-directory: ./infrastructure
-        run: make deploy-testing
-      - name: Show Outputs
-        working-directory: ./infrastructure/dev
-        run: terraform output
-
-  destroy-infra:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
-    runs-on: ubuntu-latest
-    environment: dev
-    steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-central-1 
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.13.4"
-      - name: Destroy
-        working-directory: ./infrastructure
-        run: make destroy AUTO=yes
+        run: make deploy-testing  # Your bootstrap + dev (skips bootstrap if exists)
