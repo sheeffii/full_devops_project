@@ -9,7 +9,7 @@
 #   full-deploy         → All + SSM connect
 #   ec2-ssm-connect     → SSM session (auto-install plugin)
 #   ec2-ssh-connect     → SSH via EIP
-#   destroy             → Safe destroy (dev → bootstrap)
+#   destroy             → Safe destroy (dev → bootstrap + AMI cleanup)
 #   clean               → Remove local state
 #   packer-build-prod   → (commented) Prod AMI with cleanup
 # =============================================================================
@@ -19,49 +19,60 @@
         install-ssm-plugin
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CONFIGURATION
+# CONFIGURATION (Override in CI: ENV=staging BUCKET=my-bucket)
 # ─────────────────────────────────────────────────────────────────────────────
-BOOTSTRAP_DIR = bootstrap
-TESTING_DIR   = dev
-TFVARS        = example.tfvars
-REGION        = eu-central-1
+ENV             ?= dev
+BUCKET          ?= team7-$(ENV)-tf-state
+STATE_KEY       ?= $(ENV)/terraform.tfstate
+LOCK_TABLE      ?= team7-$(ENV)-tf-lock
+TFVARS          = example.tfvars
+TFVARS_PATH     = $(TESTING_DIR)/$(TFVARS)
+REGION          = eu-central-1
+BOOTSTRAP_DIR   = bootstrap
+TESTING_DIR     = dev
+AUTO            ?= no  # For non-interactive (e.g., AUTO=yes make destroy)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # DEFAULT: FULL PIPELINE
 # ─────────────────────────────────────────────────────────────────────────────
-all: packer-build bootstrap deploy-dev-only
+all: packer-build deploy-testing
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. PACKER: Build Docker-ready AMI
+# 1. PACKER: Build Docker-ready AMI (skip if exists)
 # ─────────────────────────────────────────────────────────────────────────────
 packer-build:
-	@echo "Building/Updating Packer AMI (overwrites existing)..."
-	cd packer && packer init . && packer build -force packer-docker-ami.pkr.hcl
-	@if [ -f packer/packer-manifest.json ]; then \
-		if command -v jq >/dev/null 2>&1; then \
-			AMI_ID=$$(jq -r '.builds[0].artifact_id' packer/packer-manifest.json | grep -o 'ami-[0-9a-f]\{8,17\}' | head -1); \
-			if [ -n "$$AMI_ID" ]; then \
-				echo "AMI ready! ID: $$AMI_ID"; \
-			else \
-				echo "AMI ready! (Check manifest: cat packer/packer-manifest.json | grep ami-)"; \
-			fi; \
-		else \
-			echo "AMI ready! (Install 'jq' for auto-ID: sudo apt install jq)"; \
-			echo "   Manual check: cat packer/packer-manifest.json | grep -o 'ami-[0-9a-f]\{8,17\}'"; \
-		fi; \
-		echo "Test: Launch EC2 from 'team7-docker-ami-dev' in Console, verify Docker/SSM."; \
-	fi
+	@echo "🚀 Building/Updating Packer AMI (ENV: $(ENV))..."
+	@rm -f packer/packer-manifest.json
+	@echo "🔍 Checking for existing AMI with tag 'team7-docker-ami-$(ENV)'..."
+	@AMI_ID=$$(aws ec2 describe-images --owners self \
+		--filters "Name=tag:Name,Values=team7-docker-ami-$(ENV)" \
+		--query 'Images[0].ImageId' --output text --region $(REGION) 2>/dev/null); \
+	if [ -n "$$AMI_ID" ] && [ "$$AMI_ID" != "None" ]; then \
+		echo "✅ Existing AMI found: $$AMI_ID — skipping Packer build."; \
+	else \
+		echo "❌ No AMI found — starting Packer build..."; \
+		cd packer && packer init . && packer build -force packer-docker-ami.pkr.hcl; \
+	fi; \
+	echo "✅ Packer build finished. AMI should be ready."
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. BOOTSTRAP: Create backend (S3 + DynamoDB)
 # ─────────────────────────────────────────────────────────────────────────────
 bootstrap:
-	@echo "Bootstrapping backend..."
-	cd $(BOOTSTRAP_DIR) && rm -rf .terraform .terraform.lock.hcl
-	cd $(BOOTSTRAP_DIR) && terraform init -reconfigure -upgrade
-	cd $(BOOTSTRAP_DIR) && terraform validate
-	cd $(BOOTSTRAP_DIR) && terraform apply -auto-approve
-
+	@echo "🚀 Bootstrapping Terraform backend (ENV: $(ENV), Bucket: $(BUCKET))..."
+	@if aws s3 ls s3://$(BUCKET) >/dev/null 2>&1; then \
+		echo "✅ Backend exists (bucket $(BUCKET), lock table $(LOCK_TABLE)) — skipping bootstrap!"; \
+	else \
+		echo "⚠️ Backend missing — running bootstrap..."; \
+		( \
+			cd $(BOOTSTRAP_DIR); \
+			rm -rf .terraform .terraform.lock.hcl; \
+			terraform init -reconfigure -upgrade; \
+			terraform validate; \
+			terraform apply -auto-approve; \
+		); \
+		echo "✅ Created successfully — bucket $(BUCKET), table $(LOCK_TABLE)."; \
+	fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. DEPLOY DEV ONLY
@@ -77,17 +88,8 @@ deploy-dev-only:
 		-backend-config="region=$(REGION)" \
 		-backend-config="dynamodb_table=team7-dev-tf-lock"; \
 	cd $$DEV_ABS && terraform validate; \
-	# AUTO-UPDATE AMI FROM PACKER MANIFEST
-	@if [ -f ../packer/packer-manifest.json ]; then \
-		AMI_ID=$$(grep -o 'ami-[0-9a-f]\{8,17\}' ../packer/packer-manifest.json | head -1); \
-		if [ -n "$$AMI_ID" ]; then \
-			sed -i '/^ami_id\s*=/d' $(TFVARS) || true; \
-			echo "ami_id = \"$$AMI_ID\"" >> $(TFVARS); \
-			echo "✅ Auto-updated tfvars with new AMI: $$AMI_ID"; \
-		else \
-			echo "⚠️ No AMI in manifest—using tfvars as-is"; \
-		fi; \
-	fi; \
+	cd $$DEV_ABS && if [ ! -f $(TFVARS) ]; then echo "# Default vars" > $(TFVARS); echo "Created missing $(TFVARS)"; fi; \
+	cd $$DEV_ABS && echo "Debug: tfvars in dev/: "; ls -la $(TFVARS); \
 	cd $$DEV_ABS && terraform apply -var-file=$(TFVARS) -auto-approve; \
 	echo "Dev deployment complete!"
 
@@ -95,17 +97,12 @@ deploy-dev-only:
 # COMPOSITE TARGETS
 # ─────────────────────────────────────────────────────────────────────────────
 deploy-testing:
-	@echo "Deploying testing (bootstrap + dev; skipping Packer)..."
-	@echo "Checking if bootstrap backend exists..."
-	@if aws s3 ls s3://team7-dev-tf-state >/dev/null 2>&1; then \
-		echo "✅ Bucket exists—skipping bootstrap!"; \
-	else \
-		echo "⚠️  Bucket missing—running bootstrap..."; \
-		$(MAKE) bootstrap; \
-	fi
+	@echo "🚀 Deploying testing (bootstrap + dev; skipping Packer)..."
+	$(MAKE) bootstrap
 	$(MAKE) deploy-dev-only
 
-full-deploy: packer-build bootstrap deploy-dev-only ec2-ssm-connect
+
+full-deploy: packer-build deploy-testing ec2-ssm-connect
 	@echo "Full deployment + SSM connection complete!"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -151,14 +148,12 @@ install-ssm-plugin:
 # ─────────────────────────────────────────────────────────────────────────────
 # DESTROY: Safe, ordered
 # ─────────────────────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────────────────────
-# DESTROY: Safe, ordered, NO backend.tf required
-# ─────────────────────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────────────────────
-# DESTROY: Uses saved bucket from .state-bucket file
-# ─────────────────────────────────────────────────────────────────────────────
 destroy:
-	@echo "Destroy all? (y/n)" && read ans && [ $${ans:-n} = y ] || exit 0
+	@if [ "$(AUTO)" = "yes" ]; then \
+		echo "AUTO=yes—destroying all..."; \
+	else \
+		echo "Destroy all? (y/n)" && read ans && [ "$$ans" = "y" ] || exit 0; \
+	fi
 
 	# ---- DEV -------------------------------------------------
 	@D=$$(pwd)/$(TESTING_DIR); \
@@ -168,27 +163,52 @@ destroy:
 	echo "Destroying dev/ ($$D)"; \
 	cd $$D && rm -rf .terraform .terraform.lock.hcl; \
 	cd $$D && terraform init -reconfigure \
-		-backend-config="bucket=team7-dev-tf-state" \
-		-backend-config="key=dev/terraform.tfstate" \
+		-backend-config="bucket=$(BUCKET)" \
+		-backend-config="key=$(STATE_KEY)" \
 		-backend-config="region=$(REGION)" \
-		-backend-config="dynamodb_table=team7-dev-tf-lock" \
+		-backend-config="dynamodb_table=$(LOCK_TABLE)" \
 		2>/dev/null || true; \
 	cd $$D && terraform destroy -var-file=$(TFVARS) -auto-approve
 
-	# ---- BOOTSTRAP -------------------------------------------
-	@B=$$(pwd)/$(BOOTSTRAP_DIR); \
-	if [ ! -d "$$B" ]; then \
-		echo "ERROR: $(BOOTSTRAP_DIR)/ directory not found!"; exit 1; \
-	fi; \
-	echo "Destroying bootstrap/ ($$B)"; \
-	cd $$B && rm -rf .terraform .terraform.lock.hcl; \
-	cd $$B && terraform init -reconfigure 2>/dev/null || true; \
-	cd $$B && terraform destroy -auto-approve
+# ---- BOOTSTRAP (conditional) -------------------------------------------
+	@if aws s3 ls s3://$(BUCKET) >/dev/null 2>&1; then \
+		echo "Bucket exists—running bootstrap destroy..."; \
+		B=$$(pwd)/$(BOOTSTRAP_DIR); \
+		if [ ! -d "$$B" ]; then \
+			echo "ERROR: $(BOOTSTRAP_DIR)/ directory not found!"; exit 1; \
+		fi; \
+		echo "Destroying bootstrap/ ($$B)"; \
+		cd $$B && rm -rf .terraform .terraform.lock.hcl && \
+		terraform init -reconfigure && \
+		terraform destroy -auto-approve; \
+		echo "Bucket destroy complete—run bootstrap again for recreate."; \
+	else \
+		echo "No bootstrap resources—skipping destroy."; \
+	fi
+
+# ---- PACKER AMI CLEANUP --------------------------------------------------
+	@echo "🚀 Destroying Packer AMI and associated snapshots for ENV: $(ENV)..."
+	@AMI_ID=$$(aws ec2 describe-images --owners self \
+		--filters "Name=tag:Name,Values=team7-docker-ami-$(ENV)" \
+		--query 'Images[0].ImageId' --output text --region $(REGION) 2>/dev/null); \
+	if [ -n "$$AMI_ID" ] && [ "$$AMI_ID" != "None" ]; then \
+		echo "Found AMI: $$AMI_ID — deregistering..."; \
+		SNAPSHOTS=$$(aws ec2 describe-images --image-ids $$AMI_ID --region $(REGION) \
+			--query 'Images[0].BlockDeviceMappings[].Ebs.SnapshotId' --output text 2>/dev/null); \
+		aws ec2 deregister-image --image-id $$AMI_ID --region $(REGION); \
+		for snap in $$SNAPSHOTS; do \
+			if [ -n "$$snap" ] && [ "$$snap" != "None" ]; then \
+				echo "Deleting snapshot: $$snap"; \
+				aws ec2 delete-snapshot --snapshot-id $$snap --region $(REGION) || true; \
+			fi; \
+		done; \
+		echo "✅ AMI and snapshots deleted."; \
+	else \
+		echo "No Packer AMI found for $(ENV) — skipping cleanup."; \
+	fi
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CLEAN: Local state & cache
-# ─────────────────────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────────────────────
-# CLEAN: Remove local Terraform cache & state (preserves .tf source files)
 # ─────────────────────────────────────────────────────────────────────────────
 clean:
 	@echo "🧹 Clean local Terraform cache and state files? (y/n)" && \
@@ -205,9 +225,11 @@ clean:
 	rm -f $(TESTING_DIR)/.terraform.lock.hcl
 	rm -f $(TESTING_DIR)/terraform.tfstate
 	rm -f $(TESTING_DIR)/terraform.tfstate.backup
+	rm -f $(TFVARS_PATH)  # Clean tfvars too if generated
 
 	@echo "→ Cleaning packer/..."
 	rm -f packer/packer-manifest.json
+#	rm -f packer/.packer-hash   Clean hash file
 
 	@echo "✅ Clean complete. All .tf source files preserved."
 

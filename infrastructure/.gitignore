@@ -1,7 +1,6 @@
 # Terraform files
 *.tfstate
 *.tfstate.*
-!example.tfvars
 .terraform/
 .terraform.lock.hcl
 crash.log
@@ -12,6 +11,10 @@ override.tf.json
 *_override.tf.json
 # CLI configuration
 .terraform/
+
+# ...except bootstrap (needed for CI destroy)
+!infrastructure/bootstrap/terraform.tfstate
+!infrastructure/bootstrap/terraform.tfstate.backup
 
 # SSH Keys
 *.pem

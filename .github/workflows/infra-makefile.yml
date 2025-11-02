@@ -1,76 +1,73 @@
 name: Infrastructure CI/CD
+
 on:
   push:
     branches: [ main ]
-    paths: [ 'infrastructure/**' ]  # Only if infra files change
+    paths: [ 'infrastructure/**' ]
   pull_request:
     branches: [ main ]
     paths: [ 'infrastructure/**' ]
-  workflow_dispatch:  # Manual run button
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - destroy
 
 jobs:
-  # For PRs: Quick check (no deploy)
   quick-check:
-    name: Quick Check (PR Only)
-    runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.13.4"
-      - uses: actions/cache@v4
-        with:
-          path: ~/.terraform.d/plugin-cache
-          key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }}  # Fast if unchanged
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/packer
-          key: ${{ runner.os }}-packer-${{ hashFiles('infrastructure/packer/**/*.pkr.hcl') }}  # Fast if unchanged
-      - name: Check Code
+      - name: Validate
         working-directory: ./infrastructure/dev
-        run: terraform init -backend=false && terraform validate -no-color
+        run: terraform init -backend=false && terraform validate
 
-  # For main/manual: AMI first
   build-ami:
-    name: Build AMI (Fast if Cached)
+    if: github.event_name != 'pull_request' && (github.event.inputs.action != 'destroy' || github.event.inputs.action == null)
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-central-1
       - uses: actions/cache@v4
         with:
           path: ~/.cache/packer
           key: ${{ runner.os }}-packer-${{ hashFiles('infrastructure/packer/**/*.pkr.hcl') }}
-      - name: Make AMI
+      - run: make packer-build
         working-directory: ./infrastructure
-        run: make packer-build
 
-  # Then deploy (waits for AMI)
   do-deploy:
-    name: Deploy Everything
+    if: github.event_name != 'pull_request' && (github.event.inputs.action != 'destroy' || github.event.inputs.action == null)
+    needs: build-ami
     runs-on: ubuntu-latest
-    needs: build-ami  # Only if AMI done
-    if: github.event_name != 'pull_request'
+    environment: dev  # ← enables approval gates
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-central-1
       - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.13.4"
       - uses: actions/cache@v4
         with:
           path: ~/.terraform.d/plugin-cache
           key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }}
-      - name: Deploy
+      - run: make deploy-testing
         working-directory: ./infrastructure
-        run: make deploy-testing  # Your bootstrap + dev (skips bootstrap if exists)
+      - name: Show Outputs
+        working-directory: ./infrastructure/dev
+        run: terraform output
+
+  destroy-infra:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: make destroy AUTO=yes
+        working-directory: ./infrastructure
