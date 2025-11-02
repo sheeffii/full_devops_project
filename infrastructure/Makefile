@@ -175,6 +175,9 @@ destroy:
 	@if aws s3 ls s3://$(BUCKET) >/dev/null 2>&1; then \
 		echo "→ Clearing S3 contents first (for safe force-delete)..."; \
 		aws s3 rm s3://$(BUCKET) --recursive --region $(REGION) || true; \
+		echo "→ Clearing old S3 versions/markers (handles versioning ghosts)..."; \
+		# Batch delete all versions + markers (simple query + delete-objects) \
+		aws s3api delete-objects --bucket $(BUCKET) --delete "$$(aws s3api list-object-versions --bucket $(BUCKET) --region $(REGION) --query '{Objects: [Versions[].{Key:Key,VersionId:VersionId}, DeleteMarkers[].{Key:Key,VersionId:VersionId}] | [.[0][]? , .[1][]? ] | compact | [] }' --output json)" --region $(REGION) >/dev/null 2>/dev/null || true; \
 		echo "→ Deleting S3 bucket $(BUCKET)..."; \
 		aws s3 rb s3://$(BUCKET) --force --region $(REGION) || echo "  ⚠️ Bucket delete failed (check versions manually)."; \
 	else \
@@ -190,7 +193,9 @@ destroy:
 	fi; \
 	echo "→ Cleaning local bootstrap files..."; \
 	rm -rf $(BOOTSTRAP_DIR)/.terraform* $(BOOTSTRAP_DIR)/terraform.tfstate* 2>/dev/null || true; \
-	echo "✅ Bootstrap destroyed successfully." 
+	echo "✅ Bootstrap destroyed successfully."
+
+
 
 # ---- PACKER AMI CLEANUP --------------------------------------------------
 	@echo "🚀 Destroying Packer AMI and associated snapshots for ENV: $(ENV)..."
