@@ -25,6 +25,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.4"
       - name: Validate
         working-directory: ./infrastructure/dev
         run: terraform init -backend=false && terraform validate
@@ -35,28 +37,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1 
       - uses: actions/cache@v4
         with:
           path: ~/.cache/packer
           key: ${{ runner.os }}-packer-${{ hashFiles('infrastructure/packer/**/*.pkr.hcl') }}
-      - run: make packer-build
+      - name: Build AMI
         working-directory: ./infrastructure
+        run: make packer-build
 
   do-deploy:
     if: github.event_name != 'pull_request' && (github.event.inputs.action != 'destroy' || github.event.inputs.action == null)
     needs: build-ami
     runs-on: ubuntu-latest
-    environment: dev  # ← enables approval gates
+    environment: dev
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1 
       - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.4"
       - uses: actions/cache@v4
         with:
           path: ~/.terraform.d/plugin-cache
           key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }}
-      - run: make deploy-testing
+      - name: Deploy
         working-directory: ./infrastructure
+        run: make deploy-testing
       - name: Show Outputs
         working-directory: ./infrastructure/dev
         run: terraform output
@@ -68,6 +82,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1 
       - uses: hashicorp/setup-terraform@v3
-      - run: make destroy AUTO=yes
+        with:
+          terraform_version: "1.13.4"
+      - name: Destroy
         working-directory: ./infrastructure
+        run: make destroy AUTO=yes
