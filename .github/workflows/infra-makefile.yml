@@ -74,3 +74,27 @@ jobs:
       - name: Deploy
         working-directory: ./infrastructure
         run: make deploy-testing  # Your bootstrap + dev (skips bootstrap if exists)
+
+
+  # Manual destroy (via "Run workflow" button)
+  destroy-infra:
+    name: Destroy Infrastructure (Manual)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.4"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }}
+      - name: Destroy
+        working-directory: ./infrastructure
+        run: make destroy AUTO=yes # Non-interactive for CI
