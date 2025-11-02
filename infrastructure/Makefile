@@ -171,23 +171,26 @@ destroy:
 	cd $$D && terraform destroy -var-file=$(TFVARS) -auto-approve
 
 # ---- BOOTSTRAP (conditional) -------------------------------------------
-	@echo "→ Checking for bootstrap resources..."
+	@echo "🗑️ Destroying Terraform bootstrap resources..."
 	@if aws s3 ls s3://$(BUCKET) >/dev/null 2>&1; then \
-		echo "🗑️ Destroying Terraform bootstrap resources..."; \
+		echo "→ Clearing S3 contents first (for safe force-delete)..."; \
+		aws s3 rm s3://$(BUCKET) --recursive --region $(REGION) || true; \
 		echo "→ Deleting S3 bucket $(BUCKET)..."; \
-		aws s3 rb s3://$(BUCKET) --force --region $(REGION) || true; \
-		if aws dynamodb describe-table --table-name $(LOCK_TABLE) --region $(REGION) >/dev/null 2>&1; then \
-			echo "→ Deleting DynamoDB table $(LOCK_TABLE)..."; \
-			aws dynamodb delete-table --table-name $(LOCK_TABLE) --region $(REGION) >/dev/null 2>&1 || true; \
-		else \
-			echo "⚠️ DynamoDB table $(LOCK_TABLE) not found, skipping."; \
-		fi; \
-		echo "→ Cleaning local bootstrap files..."; \
-		rm -rf $(BOOTSTRAP_DIR)/.terraform* $(BOOTSTRAP_DIR)/terraform.tfstate* 2>/dev/null || true; \
-		echo "✅ Bootstrap destroyed successfully."; \
+		aws s3 rb s3://$(BUCKET) --force --region $(REGION) || echo "  ⚠️ Bucket delete failed (check versions manually)."; \
 	else \
-		echo "⚠️ No S3 bucket $(BUCKET) found — skipping bootstrap destroy."; \
-	fi
+		echo "⚠️ S3 bucket $(BUCKET) not found, skipping."; \
+	fi; \
+	if aws dynamodb describe-table --table-name $(LOCK_TABLE) --region $(REGION) >/dev/null 2>&1; then \
+		echo "→ Clearing any DynamoDB locks (unblocks delete)..."; \
+		aws dynamodb delete-item --table-name $(LOCK_TABLE) --key '{"LockID":{"S":"team7-dev-tf-state/dev/terraform.tfstate-md5"}}' --region $(REGION) || true; \
+		echo "→ Deleting DynamoDB table $(LOCK_TABLE)..."; \
+		aws dynamodb delete-table --table-name $(LOCK_TABLE) --region $(REGION) >/dev/null 2>&1 || echo "  ⚠️ Table delete failed (retry after locks clear)."; \
+	else \
+		echo "⚠️ DynamoDB table $(LOCK_TABLE) not found, skipping."; \
+	fi; \
+	echo "→ Cleaning local bootstrap files..."; \
+	rm -rf $(BOOTSTRAP_DIR)/.terraform* $(BOOTSTRAP_DIR)/terraform.tfstate* 2>/dev/null || true; \
+	echo "✅ Bootstrap destroyed successfully." 
 
 # ---- PACKER AMI CLEANUP --------------------------------------------------
 	@echo "🚀 Destroying Packer AMI and associated snapshots for ENV: $(ENV)..."
