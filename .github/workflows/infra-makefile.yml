@@ -2,7 +2,7 @@ name: Infrastructure CI/CD
 on:
   push:
     branches: [ main ]
-    paths: [ 'infrastructure/**' ]  # Only if infra files change
+    paths: [ 'infrastructure/**' ] # Only if infra files change
   pull_request:
     branches: [ main ]
     paths: [ 'infrastructure/**' ]
@@ -14,7 +14,7 @@ on:
         type: choice
         options:
           - deploy
-          - destroy 
+          - destroy
 
 jobs:
   # For PRs: Quick check (no deploy)
@@ -30,20 +30,22 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.terraform.d/plugin-cache
-          key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }}  # Fast if unchanged
+          key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }} # Fast if unchanged
       - uses: actions/cache@v4
         with:
           path: ~/.cache/packer
-          key: ${{ runner.os }}-packer-${{ hashFiles('infrastructure/packer/**/*.pkr.hcl') }}  # Fast if unchanged
+          key: ${{ runner.os }}-packer-${{ hashFiles('infrastructure/packer/**/*.pkr.hcl') }} # Fast if unchanged
       - name: Check Code
         working-directory: ./infrastructure/dev
         run: terraform init -backend=false && terraform validate -no-color
 
-  # For main/manual: AMI first
+  # For main/manual: AMI first (deploy only)
   build-ami:
     name: Build AMI (Fast if Cached)
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
+    if: |
+      github.event_name != 'pull_request' &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy'))
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
@@ -59,12 +61,14 @@ jobs:
         working-directory: ./infrastructure
         run: make packer-build
 
-  # Then deploy (waits for AMI)
+  # Then deploy (waits for AMI) (deploy only)
   do-deploy:
     name: Deploy Everything
     runs-on: ubuntu-latest
-    needs: build-ami  # Only if AMI done
-    if: github.event_name != 'pull_request'
+    needs: build-ami # Only if AMI done
+    if: |
+      github.event_name != 'pull_request' &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy'))
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
@@ -81,14 +85,13 @@ jobs:
           key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }}
       - name: Deploy
         working-directory: ./infrastructure
-        run: make deploy-testing  # Your bootstrap + dev (skips bootstrap if exists)
+        run: make deploy-testing # Your bootstrap + dev (skips bootstrap if exists)
 
-
-  # Manual destroy (via "Run workflow" button)
+  # Manual destroy (workflow_dispatch only)
   destroy-infra:
-    name: Destroy Infrastructure (Manual)
+    name: Destroy Infrastructure (Manual Only)
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
