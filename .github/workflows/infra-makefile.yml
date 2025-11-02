@@ -6,7 +6,15 @@ on:
   pull_request:
     branches: [ main ]
     paths: [ 'infrastructure/**' ]
-  workflow_dispatch:  # Manual run button
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Choose action'
+        required: true
+        type: choice
+        options:
+          - deploy
+          - destroy 
 
 jobs:
   # For PRs: Quick check (no deploy)
