@@ -176,8 +176,8 @@ destroy:
 		echo "→ Clearing S3 contents first (for safe force-delete)..."; \
 		aws s3 rm s3://$(BUCKET) --recursive --region $(REGION) || true; \
 		echo "→ Clearing old S3 versions/markers (handles versioning ghosts)..."; \
-		# Batch delete all versions + markers (simple query + delete-objects) \
-		aws s3api delete-objects --bucket $(BUCKET) --delete "$$(aws s3api list-object-versions --bucket $(BUCKET) --region $(REGION) --query '{Objects: [Versions[].{Key:Key,VersionId:VersionId}, DeleteMarkers[].{Key:Key,VersionId:VersionId}] | [.[0][]? , .[1][]? ] | compact | [] }' --output json)" --region $(REGION) >/dev/null 2>/dev/null || true; \
+		# Batch delete all versions + markers (fixed JMESPath query for concatenation) \
+		aws s3api delete-objects --bucket $(BUCKET) --delete "$$(aws s3api list-object-versions --bucket $(BUCKET) --region $(REGION) --query '{Objects: Versions[*].{Key:Key,VersionId:VersionId} + DeleteMarkers[*].{Key:Key,VersionId:VersionId}}' --output json)" --region $(REGION) >/dev/null 2>/dev/null || true; \
 		echo "→ Deleting S3 bucket $(BUCKET)..."; \
 		aws s3 rb s3://$(BUCKET) --force --region $(REGION) || echo "  ⚠️ Bucket delete failed (check versions manually)."; \
 	else \
@@ -187,7 +187,7 @@ destroy:
 		echo "→ Clearing any DynamoDB locks (unblocks delete)..."; \
 		aws dynamodb delete-item --table-name $(LOCK_TABLE) --key '{"LockID":{"S":"team7-dev-tf-state/dev/terraform.tfstate-md5"}}' --region $(REGION) || true; \
 		echo "→ Deleting DynamoDB table $(LOCK_TABLE)..."; \
-		aws dynamodb delete-table --table-name $(LOCK_TABLE) --region $(REGION) >/dev/null 2>&1 || echo "  ⚠️ Table delete failed (retry after locks clear)."; \
+		aws dynamodb delete-table --table-name $(LOCK_TABLE) --region $(REGION) >/dev/null 2>/dev/null || echo "  ⚠️ Table delete failed (retry after locks clear)."; \
 	else \
 		echo "⚠️ DynamoDB table $(LOCK_TABLE) not found, skipping."; \
 	fi; \
