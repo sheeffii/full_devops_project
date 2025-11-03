@@ -62,6 +62,14 @@ variable "key_name_prefix" {
   description = "Prefix used when creating AWS key pair names. Final key name will be <prefix>-<username>"
   default     = "team7"
 }
+
+# IAM user name for CI (GitHub Actions) to attach ECR push policy.
+# Leave empty to skip; attach manually if you manage the CI user outside Terraform.
+variable "ci_user_name" {
+  type        = string
+  description = "IAM user name used by GitHub Actions (access keys in repo secrets)"
+  default     = ""
+}
 /*
 variable "private_key_path" {
   type        = string

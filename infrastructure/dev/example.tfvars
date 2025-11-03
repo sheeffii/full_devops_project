@@ -19,6 +19,10 @@ instance_type  = "t3.micro"
 #current_user = "shefqet"
 private_key_path = "~/.ssh/id_rsa"
 
+# Optional: set the IAM user that GitHub Actions uses (access keys in repo secrets)
+# When set, Terraform will attach the minimal ECR push policy to this user.
+ci_user_name = "github-deploy-bot"
+
 # Override default tags if needed
 tags = {
   Name        = "dev-infra"
