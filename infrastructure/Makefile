@@ -180,7 +180,7 @@ destroy:
 		if echo "$$VERSIONS" | grep -q '"VersionId"'; then \
 			echo "$$VERSIONS" | jq -r '.Versions[]?, .DeleteMarkers[]? | {Key:.Key,VersionId:.VersionId}' > /tmp/delete.json; \
 			if [ -s /tmp/delete.json ]; then \
-				aws s3api delete-objects --bucket $(BUCKET) --delete "$$(jq -c '{Objects: .}' /tmp/delete.json)" --region $(REGION) || true; \
+				aws s3api delete-objects --bucket $(BUCKET) --delete "$$(jq -c --slurp '{Objects: .}' /tmp/delete.json)" --region $(REGION) || true; \
 			fi; \
 		fi; \
 		echo "→ Deleting S3 bucket $(BUCKET)..."; \
