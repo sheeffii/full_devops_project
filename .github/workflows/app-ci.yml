@@ -1,0 +1,136 @@
+name: App CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'devop-2-main/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'devop-2-main/**'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate & Test
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: devop-2-main/app/package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: devop-2-main/app
+
+      - name: Run ESLint
+        run: npx eslint . || true  # Don't fail on lint warnings
+        working-directory: devop-2-main/app
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: devop-2-main/Dockerfile
+
+      - name: Run tests
+        working-directory: devop-2-main/app
+        run: |
+          node app.js & 
+          sleep 5
+          npm test
+          curl -f http://localhost:3000/health || (echo "Health check failed" && exit 1)
+          pkill node
+
+  build-and-push:
+    name: Build & Push to ECR
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: dev  # For approval if needed
+    steps:
+      - uses: actions/checkout@v4
+      
+        # CI-only IAM user: automation only, least privilege (ECR push, EC2 deploy), keeps personal creds safe.
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Build and push to ECR (tests already run in validate job for PRs)
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: team7-app
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build image
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+                      -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+                      devop-2-main/
+          
+          # Push all tags
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          # Save image info for deployment
+          echo "IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+  deploy:
+    name: Deploy to EC2
+    needs: build-and-push
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+        # CI IAM user → Terraform & SSM deployments; automation-only, safe & auditable.
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.4"
+
+      - name: Get Terraform outputs
+        working-directory: infrastructure/dev
+        run: |
+          terraform init -backend-config="bucket=team7-dev-tf-state" \
+                        -backend-config="key=dev/terraform.tfstate" \
+                        -backend-config="region=eu-central-1" \
+                        -backend-config="dynamodb_table=team7-dev-tf-lock"
+          INSTANCE_ID=$(terraform output -raw ec2_instance_id)
+          ECR_REGISTRY=$(aws sts get-caller-identity --query Account --output text).dkr.ecr.eu-central-1.amazonaws.com
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+          echo "ECR_REGISTRY=$ECR_REGISTRY" >> $GITHUB_ENV
+
+      - name: Deploy new image to EC2
+        run: |
+          # Connect to EC2 via SSM and update container
+          aws ssm send-command \
+            --instance-ids ${{ env.INSTANCE_ID }} \
+            --document-name "AWS-RunShellScript" \
+            --parameters '{"commands":["aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}","docker pull ${{ env.ECR_REGISTRY }}/team7-app:latest","docker stop team7-app || true","docker rm team7-app || true","docker run -d --name team7-app -p 80:3000 --restart unless-stopped ${{ env.ECR_REGISTRY }}/team7-app:latest"]}' \
+            --region eu-central-1
+          
+          # Wait for command to complete
+          sleep 15

@@ -35,9 +35,22 @@ jobs:
         with:
           path: ~/.cache/packer
           key: ${{ runner.os }}-packer-${{ hashFiles('infrastructure/packer/**/*.pkr.hcl') }} # Fast if unchanged
-      - name: Check Code
+      - name: Terraform Format Check
+        working-directory: ./infrastructure/dev
+        run: terraform fmt -check -recursive
+        
+      - name: Terraform Init & Validate
         working-directory: ./infrastructure/dev
         run: terraform init -backend=false && terraform validate -no-color
+        
+      - name: TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+      
+      - name: Run TFLint
+        working-directory: ./infrastructure/dev
+        run: tflint --init && tflint
 
   # For main/manual: AMI first (deploy only)
   build-ami:
@@ -53,6 +66,8 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-central-1
+      - name: Verify AWS credentials
+        run: aws sts get-caller-identity
       - uses: actions/cache@v4
         with:
           path: ~/.cache/packer
@@ -76,6 +91,8 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-central-1
+      - name: Verify AWS credentials
+        run: aws sts get-caller-identity
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.13.4"
@@ -99,6 +116,8 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-central-1
+      - name: Verify AWS credentials
+        run: aws sts get-caller-identity
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.13.4"

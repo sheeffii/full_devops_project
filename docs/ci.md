@@ -1,21 +1,21 @@
 # CI/CD Pipeline Documentation
 
 ## Status Badges
-[![Infrastructure CI/CD Pipeline](https://github.com/sheeffii/full_devops_project/actions/workflows/infra-workflow.yml/badge.svg)](https://github.com/sheeffii/full_devops_project/actions/workflows/infra-workflow.yml)
-[![Application CI/CD Pipeline](https://github.com/sheeffii/full_devops_project/actions/workflows/app-workflow.yml/badge.svg)](https://github.com/sheeffii/full_devops_project/actions/workflows/app-workflow.yml)
+[![Infrastructure CI/CD Pipeline](https://github.com/sheeffii/full_devops_project/actions/workflows/infra-makefile.yml/badge.svg)](https://github.com/sheeffii/full_devops_project/actions/workflows/infra-makefile.yml)
+[![Application CI/CD Pipeline](https://github.com/sheeffii/full_devops_project/actions/workflows/app-ci.yml/badge.svg)](https://github.com/sheeffii/full_devops_project/actions/workflows/app-ci.yml)
 
 ## Pipeline Overview
 
 Our CI/CD implementation consists of two separate workflows:
 
-### Infrastructure Pipeline (infra-workflow.yml)
+### Infrastructure Pipeline (infra-makefile.yml)
 - Validates AWS credentials
 - Runs Terraform linting
 - Builds AMI with Packer
 - Plans and applies Terraform changes
 - Requires approval for production deployment
 
-### Application Pipeline (app-workflow.yml)
+### Application Pipeline (app-ci.yml)
 - Runs Dockerfile linting
 - Executes application tests
 - Builds and pushes Docker image

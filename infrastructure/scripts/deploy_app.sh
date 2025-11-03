@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
 
+# THIS IS OPTIONAL BECAUSE WE ARE USING THE ECR REGISTRY IN THE GITHUB ACTIONS WORKFLOW
 # Get AWS account ID dynamically
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 AWS_REGION="eu-central-1"
