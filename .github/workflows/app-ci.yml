@@ -141,13 +141,13 @@ jobs:
 
       - name: Verify deployment
         run: |
-          PUBLIC_IP=$(aws ec2 describe-instances --instance-ids ${{ env.INSTANCE_ID }} --query "Reservations[0].Instances[0].PublicIpAddress" --output text --region eu-central-1)
-          echo "Public IP: $PUBLIC_IP"
-          sleep 10
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://$PUBLIC_IP:80/health || echo "TIMEOUT")
-          if [ "$RESPONSE" = "200" ]; then
-            echo "App health check: PASS ($RESPONSE)"
+          RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://$PUBLIC_IP:80/health || echo "TIMEOUT")
+          RESPONSE_BODY=$(curl -s http://$PUBLIC_IP:80/health || echo "No response")
+          echo "Response Code: $RESPONSE_CODE"
+          echo "Response Body: $RESPONSE_BODY"
+          if [ "$RESPONSE_CODE" = "200" ] && [[ "$RESPONSE_BODY" == *"OK"* ]]; then
+            echo "App health check: FULL PASS"
           else
-            echo "Health check: FAIL ($RESPONSE). Check EC2 logs."
+            echo "Health check: FAIL. Code: $RESPONSE_CODE | Body: $RESPONSE_BODY"
             exit 1
           fi
