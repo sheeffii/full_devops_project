@@ -78,8 +78,7 @@ jobs:
           
       - name: Install and test
         run: |
-          cd devop-2-main/app && npm install
-          cd devop-2-main/app && npm test
+          cd devop-2-main/app && npm install && npm test 
 
       - name: Build and push Docker image
         env:
