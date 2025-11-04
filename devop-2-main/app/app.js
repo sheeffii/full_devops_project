@@ -8,7 +8,7 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-    res.send('Hello! This is the DevOps-2 app.');
+    res.send('Hello! This is the DevOps-2 app. SHEFQET WAS HERE!');
 });
 
 app.listen(port, () => {
