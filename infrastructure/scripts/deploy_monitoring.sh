@@ -4,27 +4,15 @@ set -e
 # Deploy monitoring stack (Prometheus + Grafana) on EC2
 echo "=== Deploying Monitoring Stack to EC2 ==="
 
-# Get EC2 IP from Terraform (robust path resolution)
-# Resolve dev directory relative to this script's location
+# Get EC2 IP from Terraform (robust relative paths)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DEV_DIR="${SCRIPT_DIR}/../dev"
 echo "Terraform dev dir: ${DEV_DIR}"
-if [ ! -d "${DEV_DIR}" ]; then
-  echo "❌ Terraform dev directory not found at ${DEV_DIR}"
-  exit 1
-fi
 cd "${DEV_DIR}"
-
-# Retrieve instance ID from Terraform outputs
-INSTANCE_ID=$(terraform output -raw ec2_instance_id 2>/dev/null || true)
-if [ -z "${INSTANCE_ID}" ] || [ "${INSTANCE_ID}" = "null" ]; then
-  echo "❌ Could not retrieve EC2 instance ID from Terraform outputs. Ensure infrastructure was applied."
-  terraform output -json || true
-  exit 1
-fi
+INSTANCE_ID=$(terraform output -raw ec2_instance_id)
 PUBLIC_IP=$(aws ec2 describe-instances \
-  --instance-ids "${INSTANCE_ID}" \
+  --instance-ids "$INSTANCE_ID" \
   --query "Reservations[0].Instances[0].PublicIpAddress" \
   --output text \
   --region eu-central-1)
@@ -67,45 +55,51 @@ MONITORING_PREFIX="${MONITORING_PREFIX:-monitoring}"
 
 echo "Using S3 bucket: ${STATE_BUCKET} (prefix: ${MONITORING_PREFIX}/)"
 
-# Resolve absolute paths for provisioning assets
+# Resolve asset paths at repo root
 ALERT_RULES_PATH="${REPO_ROOT}/alert.rules.yml"
 GRAFANA_PROVISIONING_DIR="${REPO_ROOT}/grafana-provisioning"
 GRAFANA_DASHBOARDS_DIR="${REPO_ROOT}/grafana-dashboards"
 
 echo "Repo root: ${REPO_ROOT}"
 echo "Alert rules: ${ALERT_RULES_PATH}"
-echo "Grafana provisioning dir: ${GRAFANA_PROVISIONING_DIR}"
-echo "Grafana dashboards dir: ${GRAFANA_DASHBOARDS_DIR}"
+echo "Grafana provisioning: ${GRAFANA_PROVISIONING_DIR}"
+echo "Grafana dashboards: ${GRAFANA_DASHBOARDS_DIR}"
 
-if [ ! -f "${ALERT_RULES_PATH}" ]; then
-  echo "❌ alert.rules.yml not found at ${ALERT_RULES_PATH}"
-  exit 1
-fi
-if [ ! -d "${GRAFANA_PROVISIONING_DIR}" ]; then
-  echo "❌ grafana-provisioning dir not found at ${GRAFANA_PROVISIONING_DIR}"
-  exit 1
-fi
-if [ ! -d "${GRAFANA_DASHBOARDS_DIR}" ]; then
-  echo "❌ grafana-dashboards dir not found at ${GRAFANA_DASHBOARDS_DIR}"
-  exit 1
-fi
-
+# Upload prometheus.yml (always generated)
 aws s3 cp /tmp/prometheus.yml s3://${STATE_BUCKET}/${MONITORING_PREFIX}/prometheus.yml
-aws s3 cp "${ALERT_RULES_PATH}" s3://${STATE_BUCKET}/${MONITORING_PREFIX}/alert.rules.yml
-aws s3 cp "${GRAFANA_PROVISIONING_DIR}" s3://${STATE_BUCKET}/${MONITORING_PREFIX}/grafana-provisioning/ --recursive
-aws s3 cp "${GRAFANA_DASHBOARDS_DIR}" s3://${STATE_BUCKET}/${MONITORING_PREFIX}/grafana-dashboards/ --recursive
+
+# Upload alert rules if present
+if [ -f "${ALERT_RULES_PATH}" ]; then
+  aws s3 cp "${ALERT_RULES_PATH}" s3://${STATE_BUCKET}/${MONITORING_PREFIX}/alert.rules.yml
+else
+  echo "⚠️  alert.rules.yml not found — continuing without alert rules"
+fi
+
+# Upload Grafana provisioning configs (datasource + dashboard provider)
+if [ -d "${GRAFANA_PROVISIONING_DIR}" ]; then
+  aws s3 cp "${GRAFANA_PROVISIONING_DIR}" s3://${STATE_BUCKET}/${MONITORING_PREFIX}/grafana-provisioning/ --recursive
+else
+  echo "⚠️  grafana-provisioning/ not found — Grafana will start without auto-provisioned datasources"
+fi
+
+# Upload dashboards if present
+if [ -d "${GRAFANA_DASHBOARDS_DIR}" ]; then
+  aws s3 cp "${GRAFANA_DASHBOARDS_DIR}" s3://${STATE_BUCKET}/${MONITORING_PREFIX}/grafana-dashboards/ --recursive
+else
+  echo "⚠️  grafana-dashboards/ not found — no dashboards will be uploaded"
+fi
 
 # Deploy monitoring stack via SSM
 COMMAND_ID=$(aws ssm send-command \
-  --instance-ids "${INSTANCE_ID}" \
+  --instance-ids $INSTANCE_ID \
   --document-name "AWS-RunShellScript" \
   --parameters 'commands=[
     "# Download monitoring configs from S3",
     "sudo mkdir -p /opt/monitoring/{prometheus,grafana-provisioning,grafana-dashboards}",
   "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/prometheus.yml /opt/monitoring/prometheus/prometheus.yml",
   "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/alert.rules.yml /opt/monitoring/prometheus/alert.rules.yml",
-  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/grafana-provisioning/ /opt/monitoring/grafana-provisioning/ --recursive",
-  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/grafana-dashboards/ /opt/monitoring/grafana-dashboards/ --recursive",
+  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/grafana-provisioning/ /opt/monitoring/grafana-provisioning/ --recursive || true",
+  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/grafana-dashboards/ /opt/monitoring/grafana-dashboards/ --recursive || true",
     "sudo chmod -R 644 /opt/monitoring/",
     "",
     "# Create Docker network for monitoring",
