@@ -1,11 +1,5 @@
 // IAM permissions for the GitHub Actions CI user to push to ECR
 
-variable "ci_user_name" {
-  description = "IAM user name whose access keys are stored as GitHub secrets."
-  type        = string
-  default     = ""
-}
-
 data "aws_caller_identity" "current" {}
 
 resource "aws_iam_policy" "ecr_push_team7_app" {
