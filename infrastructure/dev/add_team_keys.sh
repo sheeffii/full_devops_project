@@ -21,11 +21,10 @@ sudo systemctl enable docker
 sudo systemctl start docker
 
 # Install Prometheus Node Exporter
-NODE_EXPORTER_VERSION = " 1.10.2"
 cd /tmp
-curl -LO "https://github.com/prometheus/node_exporter/releases/download/v${NODE_EXPORTER_VERSION}/node_exporter-${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz"
-tar xzf "node_exporter-${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz"
-sudo mv "node_exporter-${NODE_EXPORTER_VERSION}.linux-amd64/node_exporter" /usr/local/bin/
+curl -LO "https://github.com/prometheus/node_exporter/releases/download/v1.10.2/node_exporter-1.10.2.linux-amd64.tar.gz"
+tar xzf "node_exporter-1.10.2.linux-amd64.tar.gz"
+sudo mv "node_exporter-1.10.2.linux-amd64/node_exporter" /usr/local/bin/
 sudo groupadd -r node_exporter || true
 sudo useradd -r -s /bin/false -g node_exporter node_exporter || true
 sudo tee /etc/systemd/system/node_exporter.service > /dev/null <<EOF
