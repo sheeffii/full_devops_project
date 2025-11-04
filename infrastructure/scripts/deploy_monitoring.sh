@@ -91,51 +91,49 @@ fi
 
 # Deploy monitoring stack via SSM
 COMMAND_ID=$(aws ssm send-command \
-  --instance-ids $INSTANCE_ID \
+  --instance-ids "${INSTANCE_ID}" \
   --document-name "AWS-RunShellScript" \
-  --parameters 'commands=[
-    "# Download monitoring configs from S3",
-    "sudo mkdir -p /opt/monitoring/{prometheus,grafana-provisioning,grafana-dashboards}",
-  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/prometheus.yml /opt/monitoring/prometheus/prometheus.yml",
-  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/alert.rules.yml /opt/monitoring/prometheus/alert.rules.yml",
-  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/grafana-provisioning/ /opt/monitoring/grafana-provisioning/ --recursive || true",
-  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/grafana-dashboards/ /opt/monitoring/grafana-dashboards/ --recursive || true",
-    "sudo chmod -R 644 /opt/monitoring/",
-    "",
-    "# Create Docker network for monitoring",
-    "sudo docker network create monitoring 2>/dev/null || true",
-    "",
-    "# Deploy Prometheus",
-    "sudo docker stop prometheus 2>/dev/null || true",
-    "sudo docker rm prometheus 2>/dev/null || true",
-    "sudo docker run -d \\",
-    "  --name prometheus \\",
-    "  --restart unless-stopped \\",
-    "  --network monitoring \\",
-    "  -p 9090:9090 \\",
-    "  -v /opt/monitoring/prometheus:/etc/prometheus:ro \\",
-    "  prom/prometheus:latest \\",
-    "  --config.file=/etc/prometheus/prometheus.yml \\",
-    "  --web.enable-lifecycle",
-    "",
-    "# Deploy Grafana",
-    "sudo docker stop grafana 2>/dev/null || true",
-    "sudo docker rm grafana 2>/dev/null || true",
-    "sudo docker run -d \\",
-    "  --name grafana \\",
-    "  --restart unless-stopped \\",
-    "  --network monitoring \\",
-    "  -p 3000:3000 \\",
-    "  -e GF_SECURITY_ADMIN_PASSWORD=admin \\",
-    "  -e GF_USERS_ALLOW_SIGN_UP=false \\",
-    "  -v /opt/monitoring/grafana-provisioning:/etc/grafana/provisioning:ro \\",
-    "  -v /opt/monitoring/grafana-dashboards:/var/lib/grafana/dashboards:ro \\",
-    "  grafana/grafana:latest",
-    "",
-    "echo \"Monitoring stack deployed successfully!\"",
-    "echo \"Prometheus: http://'$PUBLIC_IP':9090\"",
-    "echo \"Grafana: http://'$PUBLIC_IP':3000 (admin/admin)\""
-  ]' \
+  --parameters commands="# Download monitoring configs from S3
+sudo mkdir -p /opt/monitoring/{prometheus,grafana-provisioning,grafana-dashboards}
+aws s3 cp s3://${STATE_BUCKET}/${MONITORING_PREFIX}/prometheus.yml /opt/monitoring/prometheus/prometheus.yml
+aws s3 cp s3://${STATE_BUCKET}/${MONITORING_PREFIX}/alert.rules.yml /opt/monitoring/prometheus/alert.rules.yml || true
+aws s3 cp s3://${STATE_BUCKET}/${MONITORING_PREFIX}/grafana-provisioning/ /opt/monitoring/grafana-provisioning/ --recursive || true
+aws s3 cp s3://${STATE_BUCKET}/${MONITORING_PREFIX}/grafana-dashboards/ /opt/monitoring/grafana-dashboards/ --recursive || true
+sudo chmod -R 644 /opt/monitoring/
+
+# Create Docker network for monitoring
+sudo docker network create monitoring 2>/dev/null || true
+
+# Deploy Prometheus
+sudo docker stop prometheus 2>/dev/null || true
+sudo docker rm prometheus 2>/dev/null || true
+sudo docker run -d \
+  --name prometheus \
+  --restart unless-stopped \
+  --network monitoring \
+  -p 9090:9090 \
+  -v /opt/monitoring/prometheus:/etc/prometheus:ro \
+  prom/prometheus:latest \
+  --config.file=/etc/prometheus/prometheus.yml \
+  --web.enable-lifecycle
+
+# Deploy Grafana
+sudo docker stop grafana 2>/dev/null || true
+sudo docker rm grafana 2>/dev/null || true
+sudo docker run -d \
+  --name grafana \
+  --restart unless-stopped \
+  --network monitoring \
+  -p 3000:3000 \
+  -e GF_SECURITY_ADMIN_PASSWORD=admin \
+  -e GF_USERS_ALLOW_SIGN_UP=false \
+  -v /opt/monitoring/grafana-provisioning:/etc/grafana/provisioning:ro \
+  -v /opt/monitoring/grafana-dashboards:/var/lib/grafana/dashboards:ro \
+  grafana/grafana:latest
+
+echo 'Monitoring stack deployed successfully!'
+echo 'Prometheus: http://${PUBLIC_IP}:9090'
+echo 'Grafana: http://${PUBLIC_IP}:3000 (admin/admin)'" \
   --region eu-central-1 \
   --query "Command.CommandId" \
   --output text)
