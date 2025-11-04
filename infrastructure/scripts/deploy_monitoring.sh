@@ -31,14 +31,14 @@ rule_files:
 scrape_configs:
   - job_name: 'node-exporter'
     static_configs:
-      - targets: ['localhost:9100']
+      - targets: ['node-exporter:9100']
         labels:
           instance: 'ec2-node'
           environment: 'production'
 
   - job_name: 'cadvisor'
     static_configs:
-      - targets: ['localhost:8080']
+      - targets: ['cadvisor:8080']
         labels:
           instance: 'ec2-cadvisor'
           environment: 'production'
@@ -97,9 +97,17 @@ COMMANDS_JSON='[
   "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/alert.rules.yml /opt/monitoring/prometheus/alert.rules.yml || true",
   "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/grafana-provisioning/ /opt/monitoring/grafana-provisioning/ --recursive || true",
   "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/grafana-dashboards/ /opt/monitoring/grafana-dashboards/ --recursive || true",
-  "sudo chmod -R 644 /opt/monitoring/",
+  "sudo chmod -R u=rwX,go=rX /opt/monitoring/",
   "# Create Docker network for monitoring",
   "sudo docker network create monitoring 2>/dev/null || true",
+  "# Ensure node-exporter (dockerized)",
+  "sudo docker stop node-exporter 2>/dev/null || true",
+  "sudo docker rm node-exporter 2>/dev/null || true",
+  "sudo docker run -d --name node-exporter --restart unless-stopped --network monitoring -v /:/host:ro,rslave quay.io/prometheus/node-exporter:latest --path.rootfs=/host",
+  "# Ensure cAdvisor",
+  "sudo docker stop cadvisor 2>/dev/null || true",
+  "sudo docker rm cadvisor 2>/dev/null || true",
+  "sudo docker run -d --name=cadvisor --restart=unless-stopped --network monitoring -v /:/rootfs:ro -v /var/run:/var/run:ro -v /sys:/sys:ro -v /var/lib/docker/:/var/lib/docker:ro -v /dev/disk/:/dev/disk:ro -p 8080:8080 --privileged gcr.io/cadvisor/cadvisor:v0.53.0",
   "# Deploy Prometheus",
   "sudo docker stop prometheus 2>/dev/null || true",
   "sudo docker rm prometheus 2>/dev/null || true",
