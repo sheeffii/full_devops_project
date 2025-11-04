@@ -2,7 +2,11 @@ name: Infrastructure CI/CD
 on:
   push:
     branches: [ main ]
-    paths: [ 'infrastructure/**' ] # Only if infra files change
+    paths:
+      - 'infrastructure/**'
+      - 'infrastructure/scripts/deploy_monitoring.sh'
+      - 'alert.rules.yml'
+      - 'grafana-**/**'
   pull_request:
     branches: [ main ]
     paths: [ 'infrastructure/**' ]
@@ -103,6 +107,15 @@ jobs:
       - name: Deploy
         working-directory: ./infrastructure
         run: make deploy-testing # Your bootstrap + dev (skips bootstrap if exists)
+
+      - name: Deploy Monitoring Stack to EC2
+        working-directory: ./infrastructure
+        env:
+          STATE_BUCKET: team7-dev-tf-state
+          MONITORING_PREFIX: monitoring
+        run: |
+          chmod +x scripts/deploy_monitoring.sh
+          bash scripts/deploy_monitoring.sh
 
   # Manual destroy (workflow_dispatch only)
   destroy-infra:

@@ -23,10 +23,34 @@ resource "aws_security_group" "allow_access" {
 
   ingress {
     description = "Allow Node Exporter"
-    from_port   = 9100 #
+    from_port   = 9100
     to_port     = 9100
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]  # For Node Exporter/Monitoring
+  }
+
+  ingress {
+    description = "Allow cAdvisor"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # For container metrics
+  }
+
+  ingress {
+    description = "Allow Prometheus"
+    from_port   = 9090
+    to_port     = 9090
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # For Prometheus UI
+  }
+
+  ingress {
+    description = "Allow Grafana"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # For Grafana UI
   }
 
   egress {
