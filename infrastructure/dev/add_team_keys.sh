@@ -19,4 +19,3 @@ chown -R ec2-user:ec2-user /home/ec2-user/.ssh
 # Start Docker
 sudo systemctl enable docker
 sudo systemctl start docker
-sudo docker run -d -p 80:80 --name webserver nginx
