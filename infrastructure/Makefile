@@ -90,7 +90,7 @@ deploy-dev-only:
 	cd $$DEV_ABS && terraform validate; \
 	cd $$DEV_ABS && if [ ! -f $(TFVARS) ]; then echo "# Default vars" > $(TFVARS); echo "Created missing $(TFVARS)"; fi; \
 	cd $$DEV_ABS && echo "Debug: tfvars in dev/: "; ls -la $(TFVARS); \
-	cd $$DEV_ABS && terraform apply -var-file=$(TFVARS) -auto-approve; \
+	cd $$DEV_ABS && terraform apply -var-file=$(TFVARS) -auto-approve && \
 	echo "Dev deployment complete!"
 
 # ─────────────────────────────────────────────────────────────────────────────

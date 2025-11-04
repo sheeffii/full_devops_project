@@ -41,8 +41,9 @@ resource "aws_instance" "ec2_instance" {
   iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
 
   # ADD ALL TEAM SSH KEYS + START DOCKER
+  # Pass only the public key values as a list to the template
   user_data = templatefile("${path.module}/add_team_keys.sh", {
-    team_keys = var.ssh_public_keys
+    team_keys = values(var.ssh_public_keys)
   })
 
   tags = var.tags

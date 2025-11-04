@@ -7,6 +7,7 @@ echo "=== Deploying Monitoring Stack to EC2 ==="
 # Get EC2 IP from Terraform (robust path resolution)
 # Resolve dev directory relative to this script's location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DEV_DIR="${SCRIPT_DIR}/../dev"
 echo "Terraform dev dir: ${DEV_DIR}"
 if [ ! -d "${DEV_DIR}" ]; then
@@ -66,10 +67,33 @@ MONITORING_PREFIX="${MONITORING_PREFIX:-monitoring}"
 
 echo "Using S3 bucket: ${STATE_BUCKET} (prefix: ${MONITORING_PREFIX}/)"
 
+# Resolve absolute paths for provisioning assets
+ALERT_RULES_PATH="${REPO_ROOT}/alert.rules.yml"
+GRAFANA_PROVISIONING_DIR="${REPO_ROOT}/grafana-provisioning"
+GRAFANA_DASHBOARDS_DIR="${REPO_ROOT}/grafana-dashboards"
+
+echo "Repo root: ${REPO_ROOT}"
+echo "Alert rules: ${ALERT_RULES_PATH}"
+echo "Grafana provisioning dir: ${GRAFANA_PROVISIONING_DIR}"
+echo "Grafana dashboards dir: ${GRAFANA_DASHBOARDS_DIR}"
+
+if [ ! -f "${ALERT_RULES_PATH}" ]; then
+  echo "❌ alert.rules.yml not found at ${ALERT_RULES_PATH}"
+  exit 1
+fi
+if [ ! -d "${GRAFANA_PROVISIONING_DIR}" ]; then
+  echo "❌ grafana-provisioning dir not found at ${GRAFANA_PROVISIONING_DIR}"
+  exit 1
+fi
+if [ ! -d "${GRAFANA_DASHBOARDS_DIR}" ]; then
+  echo "❌ grafana-dashboards dir not found at ${GRAFANA_DASHBOARDS_DIR}"
+  exit 1
+fi
+
 aws s3 cp /tmp/prometheus.yml s3://${STATE_BUCKET}/${MONITORING_PREFIX}/prometheus.yml
-aws s3 cp ../../alert.rules.yml s3://${STATE_BUCKET}/${MONITORING_PREFIX}/alert.rules.yml
-aws s3 cp ../../grafana-provisioning s3://${STATE_BUCKET}/${MONITORING_PREFIX}/grafana-provisioning/ --recursive
-aws s3 cp ../../grafana-dashboards s3://${STATE_BUCKET}/${MONITORING_PREFIX}/grafana-dashboards/ --recursive
+aws s3 cp "${ALERT_RULES_PATH}" s3://${STATE_BUCKET}/${MONITORING_PREFIX}/alert.rules.yml
+aws s3 cp "${GRAFANA_PROVISIONING_DIR}" s3://${STATE_BUCKET}/${MONITORING_PREFIX}/grafana-provisioning/ --recursive
+aws s3 cp "${GRAFANA_DASHBOARDS_DIR}" s3://${STATE_BUCKET}/${MONITORING_PREFIX}/grafana-dashboards/ --recursive
 
 # Deploy monitoring stack via SSM
 COMMAND_ID=$(aws ssm send-command \
