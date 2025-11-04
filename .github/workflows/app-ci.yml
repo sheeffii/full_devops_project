@@ -75,6 +75,8 @@ jobs:
           node-version: 20
           cache: 'npm'
           cache-dependency-path: devop-2-main/app/package-lock.json
+          
+      - name: Install and test
         run: |
           cd devop-2-main/app && npm install
           cd devop-2-main/app && npm test
