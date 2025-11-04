@@ -4,11 +4,26 @@ set -e
 # Deploy monitoring stack (Prometheus + Grafana) on EC2
 echo "=== Deploying Monitoring Stack to EC2 ==="
 
-# Get EC2 IP from Terraform
-cd infrastructure/dev
-INSTANCE_ID=$(terraform output -raw ec2_instance_id)
+# Get EC2 IP from Terraform (robust path resolution)
+# Resolve dev directory relative to this script's location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEV_DIR="${SCRIPT_DIR}/../dev"
+echo "Terraform dev dir: ${DEV_DIR}"
+if [ ! -d "${DEV_DIR}" ]; then
+  echo "❌ Terraform dev directory not found at ${DEV_DIR}"
+  exit 1
+fi
+cd "${DEV_DIR}"
+
+# Retrieve instance ID from Terraform outputs
+INSTANCE_ID=$(terraform output -raw ec2_instance_id 2>/dev/null || true)
+if [ -z "${INSTANCE_ID}" ] || [ "${INSTANCE_ID}" = "null" ]; then
+  echo "❌ Could not retrieve EC2 instance ID from Terraform outputs. Ensure infrastructure was applied."
+  terraform output -json || true
+  exit 1
+fi
 PUBLIC_IP=$(aws ec2 describe-instances \
-  --instance-ids $INSTANCE_ID \
+  --instance-ids "${INSTANCE_ID}" \
   --query "Reservations[0].Instances[0].PublicIpAddress" \
   --output text \
   --region eu-central-1)
@@ -58,7 +73,7 @@ aws s3 cp ../../grafana-dashboards s3://${STATE_BUCKET}/${MONITORING_PREFIX}/gra
 
 # Deploy monitoring stack via SSM
 COMMAND_ID=$(aws ssm send-command \
-  --instance-ids $INSTANCE_ID \
+  --instance-ids "${INSTANCE_ID}" \
   --document-name "AWS-RunShellScript" \
   --parameters 'commands=[
     "# Download monitoring configs from S3",
