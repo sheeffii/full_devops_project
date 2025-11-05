@@ -1,3 +1,5 @@
+# https://grafana.com/docs/grafana/latest/datasources/prometheus/
+# Its job is to tell Grafana how to connect to Prometheus automatically.
 apiVersion: 1
 
 datasources:

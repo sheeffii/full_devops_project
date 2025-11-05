@@ -1,0 +1,14 @@
+[Unit]
+Description=Redeploy team7 app from ECR on boot and ensure monitoring containers are running
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/redeploy_on_boot.sh
+User=root
+Group=root
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target
