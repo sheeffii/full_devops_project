@@ -11,7 +11,8 @@ log() { echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] $*"; }
 log "Getting AWS account ID..."
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-IMAGE_REF="${ECR_REGISTRY}/${ECR_REPO}:latest"
+#IMAGE_REF="${ECR_REGISTRY}/${ECR_REPO}:latest"
+IMAGE_REF="${ECR_REGISTRY}/team7-app:test"
 
 log "Logging into ECR..."
 aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
