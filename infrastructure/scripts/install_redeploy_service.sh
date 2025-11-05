@@ -65,12 +65,6 @@ COMMANDS_JSON="[
   \"echo '✅ Installed redeploy-on-boot.service'\",
   \"systemctl status redeploy-on-boot.service --no-pager || true\"
 ]"
-  \"sudo systemctl daemon-reload\",
-  \"sudo systemctl enable redeploy-on-boot.service\",
-  \"sudo systemctl start redeploy-on-boot.service || true\",
-  \"echo '✅ Installed redeploy-on-boot.service'\",
-  \"systemctl status redeploy-on-boot.service --no-pager || true\"
-]"
 
 # Execute via SSM
 COMMAND_ID=$(aws ssm send-command \
