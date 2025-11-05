@@ -105,6 +105,25 @@ The infrastructure supports multiple team members accessing the EC2 instance:
 - Team SSH key management
 - Remote state configuration
 
+### 4. Auto-Redeploy Service (Optional)
+- Systemd service that auto-redeploys app on EC2 reboot
+- Automatically installed via CI/CD pipeline after infrastructure deployment
+- Files: `scripts/redeploy_on_boot.sh`, `systemd/redeploy-on-boot.service`
+- Pulls latest image from ECR and restarts containers on every boot
+
+## CI/CD Pipeline
+
+The GitHub Actions workflow (`.github/workflows/infra-makefile.yml`) automatically:
+
+1. **On Pull Request**: Quick validation (format, lint, validate)
+2. **On Push to Main** or **Manual Deploy**:
+   - Builds AMI with Packer
+   - Deploys infrastructure with Terraform
+   - Deploys monitoring stack (Prometheus, Grafana)
+   - **Installs auto-redeploy service** on EC2
+
+The auto-redeploy service ensures your app always runs the latest ECR image after any reboot.
+
 ## Security Features
 
 1. **SSH Access**

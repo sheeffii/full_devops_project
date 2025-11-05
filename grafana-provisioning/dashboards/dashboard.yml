@@ -1,4 +1,5 @@
- 
+# https://grafana.com/docs/grafana/latest/dashboards/dashboards/
+# Tells Grafana where to find dashboard JSON files to load automatically.
 apiVersion: 1
 
 providers:

@@ -117,6 +117,15 @@ jobs:
           chmod +x scripts/deploy_monitoring.sh
           bash scripts/deploy_monitoring.sh
 
+      - name: Install Auto-Redeploy Service
+        working-directory: ./infrastructure
+        env:
+          STATE_BUCKET: team7-dev-tf-state
+          REGION: eu-central-1
+        run: |
+          chmod +x scripts/install_redeploy_service.sh
+          bash scripts/install_redeploy_service.sh
+
   # Manual destroy (workflow_dispatch only)
   destroy-infra:
     name: Destroy Infrastructure (Manual Only)
