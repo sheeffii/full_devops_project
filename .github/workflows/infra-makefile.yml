@@ -19,6 +19,7 @@ on:
         options:
           - deploy
           - destroy
+          - check-status
 
 jobs:
   # For PRs: Quick check (no deploy)
@@ -90,6 +91,22 @@ jobs:
       (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy'))
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Notify Discord - Deployment Started
+        uses: ./.github/actions/discord-notify
+        if: always()
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: started
+          title: Infrastructure Deployment Started
+          description: "Deploying infrastructure to AWS..."
+          fields: |
+            [
+              {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
+              {"name": "Branch", "value": "`${{ github.ref_name }}`", "inline": true},
+              {"name": "Actor", "value": "${{ github.actor }}", "inline": true}
+            ]
+      
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -126,6 +143,45 @@ jobs:
           chmod +x scripts/install_redeploy_service.sh
           bash scripts/install_redeploy_service.sh
 
+      - name: Get Infrastructure Info
+        id: infra-info
+        working-directory: ./infrastructure/dev
+        run: |
+          echo "instance_id=$(terraform output -raw ec2_instance_id)" >> $GITHUB_OUTPUT
+          echo "public_ip=$(terraform output -raw ec2_public_ip)" >> $GITHUB_OUTPUT
+
+      - name: Notify Discord - Deployment Success
+        uses: ./.github/actions/discord-notify
+        if: success()
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: success
+          title: Infrastructure Deployment Successful
+          description: "Infrastructure deployed successfully to AWS!"
+          fields: |
+            [
+              {"name": "Instance ID", "value": "`${{ steps.infra-info.outputs.instance_id }}`", "inline": true},
+              {"name": "Public IP", "value": "`${{ steps.infra-info.outputs.public_ip }}`", "inline": true},
+              {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
+              {"name": "Run", "value": "[View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false}
+            ]
+
+      - name: Notify Discord - Deployment Failure
+        uses: ./.github/actions/discord-notify
+        if: failure()
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: failure
+          title: Infrastructure Deployment Failed
+          description: "Infrastructure deployment encountered an error!"
+          fields: |
+            [
+              {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
+              {"name": "Branch", "value": "`${{ github.ref_name }}`", "inline": true},
+              {"name": "Actor", "value": "${{ github.actor }}", "inline": true},
+              {"name": "Logs", "value": "[View Error Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false}
+            ]
+
   # Manual destroy (workflow_dispatch only)
   destroy-infra:
     name: Destroy Infrastructure (Manual Only)
@@ -133,6 +189,21 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Notify Discord - Destroy Started
+        uses: ./.github/actions/discord-notify
+        if: always()
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: started
+          title: Infrastructure Destruction Started
+          description: "⚠️ Destroying AWS infrastructure..."
+          fields: |
+            [
+              {"name": "Actor", "value": "${{ github.actor }}", "inline": true},
+              {"name": "Branch", "value": "`${{ github.ref_name }}`", "inline": true}
+            ]
+      
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -150,3 +221,76 @@ jobs:
       - name: Destroy
         working-directory: ./infrastructure
         run: make destroy AUTO=yes # Non-interactive for CI
+
+      - name: Notify Discord - Destroy Success
+        uses: ./.github/actions/discord-notify
+        if: success()
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: success
+          title: Infrastructure Destroyed
+          description: "Infrastructure successfully destroyed"
+          fields: |
+            [
+              {"name": "Actor", "value": "${{ github.actor }}", "inline": true},
+              {"name": "Run", "value": "[View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": true}
+            ]
+
+      - name: Notify Discord - Destroy Failure
+        uses: ./.github/actions/discord-notify
+        if: failure()
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: failure
+          title: Infrastructure Destruction Failed
+          description: "Failed to destroy infrastructure!"
+          fields: |
+            [
+              {"name": "Actor", "value": "${{ github.actor }}", "inline": true},
+              {"name": "Logs", "value": "[View Error Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false}
+            ]
+
+  # Check infrastructure status
+  check-status:
+    name: Check Infrastructure Status
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'check-status'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.4"
+      
+      - name: Get Status
+        id: status
+        working-directory: ./infrastructure/dev
+        run: |
+          terraform init
+          INSTANCE_ID=$(terraform output -raw ec2_instance_id)
+          PUBLIC_IP=$(terraform output -raw ec2_public_ip)
+          STATE=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[0].Instances[0].State.Name' --output text --region eu-central-1)
+          
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+          echo "state=$STATE" >> $GITHUB_OUTPUT
+
+      - name: Notify Discord - Status
+        uses: ./.github/actions/discord-notify
+        if: always()
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK }}
+          status: success
+          title: Infrastructure Status
+          description: "Current infrastructure status"
+          fields: |
+            [
+              {"name": "Instance ID", "value": "`${{ steps.status.outputs.instance_id }}`", "inline": true},
+              {"name": "Public IP", "value": "`${{ steps.status.outputs.public_ip }}`", "inline": true},
+              {"name": "State", "value": "${{ steps.status.outputs.state }}", "inline": true},
+              {"name": "Requested by", "value": "${{ github.actor }}", "inline": false}
+            ]

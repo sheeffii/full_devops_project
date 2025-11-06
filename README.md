@@ -44,7 +44,13 @@ full_devops_project/
 
 ## Technologies
 
-- **AWS**: EC2, ECR, S3, DynamoDB, SSM
+- **Cloud**: AWS (EC2, ECR, S3, DynamoDB, SSM)
+- **IaC**: Terraform, Packer
+- **CI/CD**: GitHub Actions
+- **Containers**: Docker, Docker Compose
+- **Monitoring**: Prometheus, Grafana, Node Exporter, cAdvisor
+- **App**: Node.js, Express
+- **Other**: Systemd, Bash scripting
 - **Terraform**: Infrastructure as Code
 - **Packer**: AMI building
 - **Docker**: Containerization

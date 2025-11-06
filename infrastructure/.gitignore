@@ -32,6 +32,7 @@ packer_cache/
 .env
 .env.*
 *.env
+!.env.example
 
 # Local .terraform directories
 **/.terraform/*

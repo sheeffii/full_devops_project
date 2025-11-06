@@ -57,6 +57,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Notify Discord - Build Started
+        uses: ./.github/actions/discord-notify
+        if: always()
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: started
+          title: App Build Started
+          description: "Building and pushing Docker image to ECR..."
+          fields: |
+            [
+              {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
+              {"name": "Branch", "value": "`${{ github.ref_name }}`", "inline": true},
+              {"name": "Actor", "value": "${{ github.actor }}", "inline": true}
+            ]
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -87,6 +102,37 @@ jobs:
                       devop-2-main/  # Your current context
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Notify Discord - Build Success
+        uses: ./.github/actions/discord-notify
+        if: success()
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: success
+          title: App Build Successful
+          description: "Docker image built and pushed to ECR"
+          fields: |
+            [
+              {"name": "Image Tag", "value": "`${{ github.sha }}`", "inline": true},
+              {"name": "Repository", "value": "`team7-app`", "inline": true},
+              {"name": "Branch", "value": "`${{ github.ref_name }}`", "inline": true},
+              {"name": "Registry", "value": "`${{ steps.login-ecr.outputs.registry }}`", "inline": false}
+            ]
+
+      - name: Notify Discord - Build Failure
+        uses: ./.github/actions/discord-notify
+        if: failure()
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: failure
+          title: App Build Failed
+          description: "Failed to build or push Docker image"
+          fields: |
+            [
+              {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
+              {"name": "Branch", "value": "`${{ github.ref_name }}`", "inline": true},
+              {"name": "Logs", "value": "[View Error Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false}
+            ]
 
   deploy:
     name: Deploy to EC2
@@ -140,9 +186,11 @@ jobs:
           echo "Deploy succeeded!"
 
       - name: Verify deployment
+        id: verify
         run: |
           PUBLIC_IP=$(aws ec2 describe-instances --instance-ids ${{ env.INSTANCE_ID }} --query "Reservations[0].Instances[0].PublicIpAddress" --output text --region eu-central-1)
           echo "Public IP: $PUBLIC_IP"
+          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
           sleep 10
 
           echo "Checking /health endpoint..."
@@ -154,10 +202,40 @@ jobs:
           echo "Response body: $RESPONSE_BODY"
 
           if [ "$HEALTH_CODE" = "200" ] && [ -n "$RESPONSE_BODY" ]; then
-            echo " App verification: PASS"
+            echo "✅ App verification: PASS"
           else
-            echo " App verification: FAIL"
+            echo "❌ App verification: FAIL"
             exit 1
           fi
 
+      - name: Notify Discord - Deployment Success
+        uses: ./.github/actions/discord-notify
+        if: success()
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL}}
+          status: success
+          title: App Deployed Successfully
+          description: "App deployed to EC2 and verified!"
+          fields: |
+            [
+              {"name": "Public IP", "value": "`${{ steps.verify.outputs.public_ip }}`", "inline": true},
+              {"name": "Image Tag", "value": "`${{ github.sha }}`", "inline": true},
+              {"name": "Health Check", "value": "✅ Passed", "inline": true},
+              {"name": "URL", "value": "[http://${{ steps.verify.outputs.public_ip }}](http://${{ steps.verify.outputs.public_ip }})", "inline": false}
+            ]
+
+      - name: Notify Discord - Deployment Failure
+        uses: ./.github/actions/discord-notify
+        if: failure()
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: failure
+          title: App Deployment Failed
+          description: "Failed to deploy or verify app on EC2"
+          fields: |
+            [
+              {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
+              {"name": "Branch", "value": "`${{ github.ref_name }}`", "inline": true},
+              {"name": "Logs", "value": "[View Error Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false}
+            ]
 

@@ -1,0 +1,72 @@
+name: 'Discord Notification'
+description: 'Send rich notifications to Discord webhook'
+inputs:
+  webhook_url:
+    description: 'Discord webhook URL'
+    required: true
+  status:
+    description: 'Status: started, success, failure, cancelled'
+    required: true
+  title:
+    description: 'Notification title'
+    required: true
+  description:
+    description: 'Notification description'
+    required: false
+    default: ''
+  fields:
+    description: 'JSON array of fields [{name, value, inline}]'
+    required: false
+    default: '[]'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Send Discord notification
+      shell: bash
+      run: |
+        # Determine color based on status
+        case "${{ inputs.status }}" in
+          started)
+            COLOR=3447003  # Blue
+            EMOJI="🚀"
+            ;;
+          success)
+            COLOR=3066993  # Green
+            EMOJI="✅"
+            ;;
+          failure)
+            COLOR=15158332 # Red
+            EMOJI="❌"
+            ;;
+          cancelled)
+            COLOR=10070709 # Grey
+            EMOJI="⚠️"
+            ;;
+          *)
+            COLOR=0
+            EMOJI="ℹ️"
+            ;;
+        esac
+
+        # Build embed JSON
+        EMBED=$(cat <<EOF
+        {
+          "embeds": [{
+            "title": "$EMOJI ${{ inputs.title }}",
+            "description": "${{ inputs.description }}",
+            "color": $COLOR,
+            "fields": ${{ inputs.fields }},
+            "footer": {
+              "text": "GitHub Actions • ${{ github.repository }}"
+            },
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }]
+        }
+        EOF
+        )
+
+        # Send to Discord
+        curl -H "Content-Type: application/json" \
+             -d "$EMBED" \
+             "${{ inputs.webhook_url }}"
