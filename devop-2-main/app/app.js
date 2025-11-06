@@ -9,7 +9,7 @@ app.get('/health', (req, res) => {
 
 app.get('/', (req, res) => {
     const currentTime = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Prague' });
-    res.send(`Hello! This is the DevOps-2 app. SHEFQET WAS HERE! <br>🕒 Current time: ${currentTime}`);
+    res.send(`Hello! This is the DevOps-2 app. SHEFQET WAS HERE! <br>🕒 Current time:<br>${currentTime}<br>`);
 });
 
 app.listen(port, () => {

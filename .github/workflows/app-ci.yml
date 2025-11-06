@@ -221,7 +221,11 @@ jobs:
               {"name": "Public IP", "value": "`${{ steps.verify.outputs.public_ip }}`", "inline": true},
               {"name": "Image Tag", "value": "`${{ github.sha }}`", "inline": true},
               {"name": "Health Check", "value": "✅ Passed", "inline": true},
-              {"name": "URL", "value": "[http://${{ steps.verify.outputs.public_ip }}](http://${{ steps.verify.outputs.public_ip }})", "inline": false}
+              {"name": "URL", "value": "[http://${{ steps.verify.outputs.public_ip }}](http://${{ steps.verify.outputs.public_ip }})", "inline": false},
+              {"name": "Deployed By", "value": "`${{ github.actor }}`", "inline": true},
+              {"name": "Branch", "value": "`${{ github.ref_name }}`", "inline": true},
+              {"name": "Environment", "value": "Production", "inline": true},
+              {"name": "Workflow Run", "value": "[View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false}
             ]
 
       - name: Notify Discord - Deployment Failure
