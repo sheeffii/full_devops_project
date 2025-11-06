@@ -140,6 +140,8 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev
+    env:
+      ENVIRONMENT: dev
     steps:
       - uses: actions/checkout@v4
 
