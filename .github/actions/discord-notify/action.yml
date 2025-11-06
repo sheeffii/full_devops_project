@@ -49,24 +49,29 @@ runs:
             ;;
         esac
 
-        # Build embed JSON
-        EMBED=$(cat <<EOF
-        {
-          "embeds": [{
-            "title": "$EMOJI ${{ inputs.title }}",
-            "description": "${{ inputs.description }}",
-            "color": $COLOR,
-            "fields": ${{ inputs.fields }},
-            "footer": {
-              "text": "GitHub Actions • ${{ github.repository }}"
-            },
-            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }]
-        }
-        EOF
-        )
+        # Escape fields JSON (replace backticks with \` to prevent command substitution)
+        FIELDS='${{ inputs.fields }}'
+        
+        # Build embed JSON using jq for proper escaping
+        PAYLOAD=$(jq -n \
+          --arg title "$EMOJI ${{ inputs.title }}" \
+          --arg description "${{ inputs.description }}" \
+          --argjson color "$COLOR" \
+          --argjson fields "$FIELDS" \
+          --arg footer "GitHub Actions • ${{ github.repository }}" \
+          --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          '{
+            "embeds": [{
+              "title": $title,
+              "description": $description,
+              "color": $color,
+              "fields": $fields,
+              "footer": {"text": $footer},
+              "timestamp": $timestamp
+            }]
+          }')
 
         # Send to Discord
         curl -H "Content-Type: application/json" \
-             -d "$EMBED" \
+             -d "$PAYLOAD" \
              "${{ inputs.webhook_url }}"
