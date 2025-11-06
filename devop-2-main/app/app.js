@@ -8,7 +8,8 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-    res.send('Hello! This is the DevOps-2 app. SHEFQET WAS HERE!, ARE YOU OK?');
+    const currentTime = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Prague' });
+    res.send(`Hello! This is the DevOps-2 app. SHEFQET WAS HERE! <br>🕒 Current time: ${currentTime}`);
 });
 
 app.listen(port, () => {

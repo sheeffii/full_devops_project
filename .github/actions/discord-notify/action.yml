@@ -1,5 +1,5 @@
 name: 'Discord Notification'
-description: 'Send rich notifications to Discord webhook'
+description: 'Send notifications to Discord webhook'
 inputs:
   webhook_url:
     description: 'Discord webhook URL'
