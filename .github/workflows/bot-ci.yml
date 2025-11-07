@@ -98,7 +98,11 @@ jobs:
         id: infra
         working-directory: ./infrastructure/dev
         run: |
-          terraform init -backend=false
+          terraform init \
+            -backend-config="bucket=team7-dev-tf-state" \
+            -backend-config="key=dev/terraform.tfstate" \
+            -backend-config="region=eu-central-1" \
+            -backend-config="dynamodb_table=team7-dev-tf-lock"
           echo "instance_id=$(terraform output -raw ec2_instance_id)" >> $GITHUB_OUTPUT
 
       - name: Notify Discord - Bot Deploy Started

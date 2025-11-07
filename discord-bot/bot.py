@@ -22,7 +22,7 @@ logger = logging.getLogger('devops-bot')
 DISCORD_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 DISCORD_GUILD_ID = os.getenv('DISCORD_GUILD_ID')
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
-GIT_REPO = os.getenv('GIT_REPO') 
+GIT_REPO = os.getenv('GIT_REPO')  # Format: owner/repo
 
 if not all([DISCORD_TOKEN, DISCORD_GUILD_ID, GITHUB_TOKEN, GIT_REPO]):
     logger.error("Missing required environment variables!")
