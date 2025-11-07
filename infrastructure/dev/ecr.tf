@@ -28,3 +28,38 @@ resource "aws_ecr_lifecycle_policy" "app_lifecycle" {
     }]
   })
 }
+
+# Discord Bot ECR Repository
+resource "aws_ecr_repository" "discord_bot_repo" {
+  name                 = "discord-bot"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = merge(var.tags, {
+    Name        = "discord-bot-ecr"
+    Description = "Discord bot container images"
+  })
+}
+
+# ECR lifecycle policy for Discord bot
+resource "aws_ecr_lifecycle_policy" "discord_bot_lifecycle" {
+  repository = aws_ecr_repository.discord_bot_repo.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Keep last 5 images, remove untagged"
+      selection = {
+        tagStatus   = "untagged"
+        countType   = "imageCountMoreThan"
+        countNumber = 5
+      }
+      action = {
+        type = "expire"
+      }
+    }]
+  })
+}

@@ -22,3 +22,13 @@ output "ecr_repository_url" {
 output "ecr_repository_name" {
   value = aws_ecr_repository.app_repo.name
 }
+
+output "discord_bot_ecr_repository_url" {
+  value = aws_ecr_repository.discord_bot_repo.repository_url
+  description = "Discord bot ECR repository URL"
+}
+
+output "discord_bot_ecr_repository_name" {
+  value = aws_ecr_repository.discord_bot_repo.name
+  description = "Discord bot ECR repository name"
+}
