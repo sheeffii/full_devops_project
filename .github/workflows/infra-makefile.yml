@@ -7,6 +7,8 @@ on:
       - 'infrastructure/scripts/deploy_monitoring.sh'
       - 'alert.rules.yml'
       - 'grafana-**/**'
+      - 'devop-2-main/**'
+      - 'discord-bot/**'
   pull_request:
     branches: [ main ]
     paths: 
@@ -67,18 +69,33 @@ jobs:
       (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy'))
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Check for Packer changes
+        id: packer-changes
+        uses: tj-actions/changed-files@v45
+        with:
+          files: |
+            infrastructure/packer/**
+      
       - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.packer-changes.outputs.any_changed == 'true'
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-central-1
+      
       - name: Verify AWS credentials
+        if: steps.packer-changes.outputs.any_changed == 'true'
         run: aws sts get-caller-identity
+      
       - uses: actions/cache@v4
+        if: steps.packer-changes.outputs.any_changed == 'true'
         with:
           path: ~/.cache/packer
           key: ${{ runner.os }}-packer-${{ hashFiles('infrastructure/packer/**/*.pkr.hcl') }}
+      
       - name: Make AMI
+        if: steps.packer-changes.outputs.any_changed == 'true'
         working-directory: ./infrastructure
         run: make packer-build
 
@@ -93,9 +110,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Check for infrastructure changes
+        id: infra-changes
+        uses: tj-actions/changed-files@v45
+        with:
+          files: |
+            infrastructure/**
+            infrastructure/scripts/deploy_monitoring.sh
+            alert.rules.yml
+            grafana-**/**
+      
       - name: Notify Discord - Deployment Started
         uses: ./.github/actions/discord-notify
-        if: always()
+        if: steps.infra-changes.outputs.any_changed == 'true'
         with:
           webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
           status: started
@@ -109,24 +136,34 @@ jobs:
             ]
       
       - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.infra-changes.outputs.any_changed == 'true'
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-central-1
+      
       - name: Verify AWS credentials
+        if: steps.infra-changes.outputs.any_changed == 'true'
         run: aws sts get-caller-identity
+      
       - uses: hashicorp/setup-terraform@v3
+        if: steps.infra-changes.outputs.any_changed == 'true'
         with:
           terraform_version: "1.13.4"
+      
       - uses: actions/cache@v4
+        if: steps.infra-changes.outputs.any_changed == 'true'
         with:
           path: ~/.terraform.d/plugin-cache
           key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }}
+      
       - name: Deploy
+        if: steps.infra-changes.outputs.any_changed == 'true'
         working-directory: ./infrastructure
         run: make deploy-testing # Your bootstrap + dev (skips bootstrap if exists)
 
       - name: Deploy Monitoring Stack to EC2
+        if: steps.infra-changes.outputs.any_changed == 'true'
         working-directory: ./infrastructure
         env:
           STATE_BUCKET: team7-dev-tf-state
@@ -136,6 +173,7 @@ jobs:
           bash scripts/deploy_monitoring.sh
 
       - name: Install Auto-Redeploy Service
+        if: steps.infra-changes.outputs.any_changed == 'true'
         working-directory: ./infrastructure
         env:
           STATE_BUCKET: team7-dev-tf-state
@@ -146,6 +184,7 @@ jobs:
 
       - name: Get Infrastructure Info
         id: infra-info
+        if: steps.infra-changes.outputs.any_changed == 'true'
         working-directory: ./infrastructure/dev
         run: |
           echo "instance_id=$(terraform output -raw ec2_instance_id)" >> $GITHUB_OUTPUT
@@ -153,7 +192,7 @@ jobs:
 
       - name: Notify Discord - Deployment Success
         uses: ./.github/actions/discord-notify
-        if: success()
+        if: success() && steps.infra-changes.outputs.any_changed == 'true'
         with:
           webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
           status: success
@@ -182,6 +221,44 @@ jobs:
               {"name": "Actor", "value": "${{ github.actor }}", "inline": true},
               {"name": "Logs", "value": "[View Error Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false}
             ]
+
+  # Dispatch app/bot workflows after infra completes
+  dispatch-app-bot:
+    name: Dispatch App/Bot Workflows
+    runs-on: ubuntu-latest
+    needs: do-deploy
+    if: |
+      success() &&
+      github.event_name != 'pull_request' &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy'))
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for app changes
+        id: app-changes
+        uses: tj-actions/changed-files@v45
+        with:
+          files: devop-2-main/**
+
+      - name: Dispatch App Workflow
+        if: steps.app-changes.outputs.any_changed == 'true'
+        run: |
+          gh workflow run app-ci.yml --ref ${{ github.ref }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for bot changes
+        id: bot-changes
+        uses: tj-actions/changed-files@v45
+        with:
+          files: discord-bot/**
+
+      - name: Dispatch Bot Workflow
+        if: steps.bot-changes.outputs.any_changed == 'true'
+        run: |
+          gh workflow run bot-ci.yml --ref ${{ github.ref }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Manual destroy (workflow_dispatch only)
   destroy-infra:

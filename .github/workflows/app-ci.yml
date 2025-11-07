@@ -1,21 +1,11 @@
 name: App CI/CD Pipeline
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'devop-2-main/**'
   pull_request:
     branches: [ main ]
     paths:
       - 'devop-2-main/**'
   workflow_dispatch:
-  # Also run after infrastructure completes (for infra+app changes in same commit)
-  workflow_run:
-    workflows: ["Infrastructure CI/CD"]
-    types:
-      - completed
-    branches: [ main ]
 
 jobs:
   validate:
@@ -57,7 +47,7 @@ jobs:
 
   build-and-push:
     name: Build & Push to ECR
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev
     steps:
@@ -143,7 +133,7 @@ jobs:
   deploy:
     name: Deploy to EC2
     needs: build-and-push
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev
     env:
