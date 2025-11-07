@@ -361,7 +361,7 @@ jobs:
         uses: ./.github/actions/discord-notify
         if: always()
         with:
-          webhook_url: ${{ secrets.DISCORD_WEBHOOK }}
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
           status: success
           title: Infrastructure Status
           description: "Current infrastructure status"
