@@ -10,6 +10,7 @@ import sys
 import urllib.request
 import urllib.error
 from datetime import datetime
+import requests
 
 DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
 if not DISCORD_WEBHOOK_URL:
@@ -24,6 +25,17 @@ SEVERITY_COLORS = {
 }
 
 class AlertmanagerHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        # Simple health endpoint
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'ok')
+        else:
+            self.send_response(404)
+            self.end_headers()
+
     def do_POST(self):
         content_length = int(self.headers['Content-Length'])
         post_data = self.rfile.read(content_length)
@@ -127,29 +139,47 @@ class AlertmanagerHandler(BaseHTTPRequestHandler):
             "username": "Prometheus Alert",
             "embeds": embeds
         }
-        
-        data = json.dumps(payload).encode('utf-8')
-        req = urllib.request.Request(
-            DISCORD_WEBHOOK_URL,
-            data=data,
-            headers={'Content-Type': 'application/json'}
-        )
-        
+
+        headers = {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Accept': 'application/json',
+            # Use a non-suspicious UA to avoid Cloudflare 403 (error 1010)
+            'User-Agent': 'DiscordBot (https://github.com/team7/full_devops_project, 1.0)'
+        }
+
         try:
-            with urllib.request.urlopen(req) as response:
-                if response.status == 204:
-                    print(f"✅ Discord notification sent successfully")
-                else:
-                    print(f"⚠️ Discord webhook returned status {response.status}", file=sys.stderr)
-        except urllib.error.HTTPError as e:
-            error_body = e.read().decode('utf-8') if e.fp else 'No error details'
-            print(f"❌ Discord API error {e.code}: {e.reason}", file=sys.stderr)
-            print(f"   Webhook URL (first 60 chars): {DISCORD_WEBHOOK_URL[:60]}...", file=sys.stderr)
-            print(f"   Response: {error_body}", file=sys.stderr)
-            raise
-        except Exception as e:
+            resp = requests.post(DISCORD_WEBHOOK_URL, json=payload, headers=headers, timeout=10)
+            if 200 <= resp.status_code < 300:
+                # Discord typically returns 204 No Content on success
+                print("✅ Discord notification sent successfully")
+                return
+            # If embeds failed (e.g., Cloudflare 1010), try a minimal content-only fallback
+            print(f"⚠️ Discord webhook returned status {resp.status_code} on embeds: {resp.text}", file=sys.stderr)
+            fallback = {
+                "content": self._fallback_text_from_embeds(embeds) or "Prometheus alert"
+            }
+            resp2 = requests.post(DISCORD_WEBHOOK_URL, json=fallback, headers=headers, timeout=10)
+            if 200 <= resp2.status_code < 300:
+                print("✅ Discord notification sent via content fallback")
+                return
+            print(f"❌ Discord webhook fallback failed: {resp2.status_code} {resp2.text}", file=sys.stderr)
+        except requests.RequestException as e:
             print(f"❌ Failed to send Discord notification: {e}", file=sys.stderr)
             raise
+
+    def _fallback_text_from_embeds(self, embeds):
+        try:
+            if not embeds:
+                return None
+            e = embeds[0]
+            title = e.get('title') or ''
+            desc = e.get('description') or ''
+            summary_field = next((f for f in e.get('fields', []) if f.get('name') == 'Summary'), None)
+            summary = summary_field.get('value') if summary_field else ''
+            parts = [p for p in [title, summary, desc] if p]
+            return ' | '.join(parts)[:1900]  # stay under Discord limits
+        except Exception:
+            return None
     
     def log_message(self, format, *args):
         """Override to reduce logging noise"""
