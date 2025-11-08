@@ -1,8 +1,14 @@
 #!/bin/bash
 set -e
 
-# Deploy monitoring stack (Prometheus + Grafana) on EC2
+# Deploy monitoring stack (Prometheus + Alertmanager + Grafana) on EC2
 echo "=== Deploying Monitoring Stack to EC2 ==="
+
+# Discord webhook URL from environment
+DISCORD_WEBHOOK_URL="${DISCORD_WEBHOOK_URL:-}"
+if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+  echo "⚠️  WARNING: DISCORD_WEBHOOK_URL not set - alerts won't be sent to Discord"
+fi
 
 # Get EC2 IP from Terraform (robust relative paths)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,35 +25,6 @@ PUBLIC_IP=$(aws ec2 describe-instances \
 
 echo "EC2 Public IP: $PUBLIC_IP"
 
-# Create prometheus.yml with EC2 IP
-cat > /tmp/prometheus.yml <<EOF
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
-
-rule_files:
-  - '/etc/prometheus/alert.rules.yml'
-
-scrape_configs:
-  - job_name: 'node-exporter'
-    static_configs:
-      - targets: ['node-exporter:9100']
-        labels:
-          instance: 'ec2-node'
-          environment: 'production'
-
-  - job_name: 'cadvisor'
-    static_configs:
-      - targets: ['cadvisor:8080']
-        labels:
-          instance: 'ec2-cadvisor'
-          environment: 'production'
-
-  - job_name: 'prometheus'
-    static_configs:
-      - targets: ['localhost:9090']
-EOF
-
 # Upload monitoring configs to S3 for EC2 to download
 # Reuse existing Terraform backend bucket with a dedicated prefix
 STATE_BUCKET="${STATE_BUCKET:-team7-dev-tf-state}"
@@ -56,23 +33,47 @@ MONITORING_PREFIX="${MONITORING_PREFIX:-monitoring}"
 echo "Using S3 bucket: ${STATE_BUCKET} (prefix: ${MONITORING_PREFIX}/)"
 
 # Resolve asset paths at repo root
-ALERT_RULES_PATH="${REPO_ROOT}/alert.rules.yml"
-GRAFANA_PROVISIONING_DIR="${REPO_ROOT}/grafana-provisioning"
-GRAFANA_DASHBOARDS_DIR="${REPO_ROOT}/grafana-dashboards"
+PROMETHEUS_CONFIG_PATH="${REPO_ROOT}/infrastructure/monitoring/configs/prometheus.yml"
+ALERT_RULES_PATH="${REPO_ROOT}/infrastructure/monitoring/configs/alert.rules.yml"
+ALERTMANAGER_CONFIG_PATH="${REPO_ROOT}/infrastructure/monitoring/configs/alertmanager.yml"
+DISCORD_PROXY_PATH="${REPO_ROOT}/infrastructure/scripts/discord-webhook-proxy.py"
+GRAFANA_PROVISIONING_DIR="${REPO_ROOT}/infrastructure/monitoring/grafana-provisioning"
+GRAFANA_DASHBOARDS_DIR="${REPO_ROOT}/infrastructure/monitoring/grafana-dashboards"
 
 echo "Repo root: ${REPO_ROOT}"
+echo "Prometheus config: ${PROMETHEUS_CONFIG_PATH}"
 echo "Alert rules: ${ALERT_RULES_PATH}"
+echo "Alertmanager config: ${ALERTMANAGER_CONFIG_PATH}"
+echo "Discord proxy: ${DISCORD_PROXY_PATH}"
 echo "Grafana provisioning: ${GRAFANA_PROVISIONING_DIR}"
 echo "Grafana dashboards: ${GRAFANA_DASHBOARDS_DIR}"
 
-# Upload prometheus.yml (always generated)
-aws s3 cp /tmp/prometheus.yml s3://${STATE_BUCKET}/${MONITORING_PREFIX}/prometheus.yml
+# Upload prometheus.yml
+if [ -f "${PROMETHEUS_CONFIG_PATH}" ]; then
+  aws s3 cp "${PROMETHEUS_CONFIG_PATH}" s3://${STATE_BUCKET}/${MONITORING_PREFIX}/prometheus.yml
+else
+  echo "⚠️  prometheus.yml not found — continuing without Prometheus config"
+fi
 
 # Upload alert rules if present
 if [ -f "${ALERT_RULES_PATH}" ]; then
   aws s3 cp "${ALERT_RULES_PATH}" s3://${STATE_BUCKET}/${MONITORING_PREFIX}/alert.rules.yml
 else
   echo "⚠️  alert.rules.yml not found — continuing without alert rules"
+fi
+
+# Upload alertmanager config if present
+if [ -f "${ALERTMANAGER_CONFIG_PATH}" ]; then
+  aws s3 cp "${ALERTMANAGER_CONFIG_PATH}" s3://${STATE_BUCKET}/${MONITORING_PREFIX}/alertmanager.yml
+else
+  echo "⚠️  alertmanager.yml not found — continuing without alertmanager"
+fi
+
+# Upload Discord webhook proxy script
+if [ -f "${DISCORD_PROXY_PATH}" ]; then
+  aws s3 cp "${DISCORD_PROXY_PATH}" s3://${STATE_BUCKET}/${MONITORING_PREFIX}/discord-webhook-proxy.py
+else
+  echo "⚠️  discord-webhook-proxy.py not found — alerts won't be sent to Discord"
 fi
 
 # Upload Grafana provisioning configs (datasource + dashboard provider)
@@ -92,12 +93,15 @@ fi
 # Define commands as a JSON array (fix for AWS CLI parsing)
 COMMANDS_JSON='[
   "# Download monitoring configs from S3",
-  "sudo mkdir -p /opt/monitoring/{prometheus,grafana-provisioning,grafana-dashboards}",
+  "sudo mkdir -p /opt/monitoring/{prometheus,alertmanager,grafana-provisioning,grafana-dashboards}",
   "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/prometheus.yml /opt/monitoring/prometheus/prometheus.yml",
   "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/alert.rules.yml /opt/monitoring/prometheus/alert.rules.yml || true",
+  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/alertmanager.yml /opt/monitoring/alertmanager/alertmanager.yml || true",
+  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/discord-webhook-proxy.py /opt/monitoring/discord-webhook-proxy.py || true",
   "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/grafana-provisioning/ /opt/monitoring/grafana-provisioning/ --recursive || true",
   "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/grafana-dashboards/ /opt/monitoring/grafana-dashboards/ --recursive || true",
   "sudo chmod -R u=rwX,go=rX /opt/monitoring/",
+  "sudo chmod +x /opt/monitoring/discord-webhook-proxy.py || true",
   "# Create Docker network for monitoring",
   "sudo docker network create monitoring 2>/dev/null || true",
   "# Ensure node-exporter (dockerized)",
@@ -110,6 +114,12 @@ COMMANDS_JSON='[
   "sudo docker run -d --name cadvisor --restart unless-stopped --network monitoring -p 8080:8080 --volume=/:/rootfs:ro --volume=/var/run:/var/run:rw --volume=/sys:/sys:ro --volume=/var/lib/docker/:/var/lib/docker:ro --volume=/dev/disk/:/dev/disk:ro --privileged gcr.io/cadvisor/cadvisor:latest",
   "sleep 2",
   "if ! sudo docker ps | grep -q cadvisor; then echo ERROR: cAdvisor failed to start; sudo docker logs cadvisor 2>&1 || true; fi",
+  "# Deploy Discord Webhook Proxy (if webhook URL provided)",
+  "if [ -n '\"'\"'${DISCORD_WEBHOOK_URL}'\"'\"' ] && [ -f /opt/monitoring/discord-webhook-proxy.py ]; then sudo docker stop discord-proxy 2>/dev/null || true; sudo docker rm discord-proxy 2>/dev/null || true; sudo docker run -d --name discord-proxy --restart unless-stopped --network monitoring -p 9094:9094 -v /opt/monitoring:/app:ro -e DISCORD_WEBHOOK_URL='\"'\"'${DISCORD_WEBHOOK_URL}'\"'\"' python:3.11-slim sh -c '\"'\"'pip install --quiet --no-cache-dir requests && python /app/discord-webhook-proxy.py'\"'\"'; else echo '\"'\"'Skipping Discord proxy (no webhook URL or script missing)'\"'\"'; fi",
+  "# Deploy Alertmanager",
+  "sudo docker stop alertmanager 2>/dev/null || true",
+  "sudo docker rm alertmanager 2>/dev/null || true",
+  "sudo docker run -d --name alertmanager --restart unless-stopped --network monitoring -p 9093:9093 -v /opt/monitoring/alertmanager:/etc/alertmanager:ro prom/alertmanager:latest --config.file=/etc/alertmanager/alertmanager.yml",
   "# Deploy Prometheus",
   "sudo docker stop prometheus 2>/dev/null || true",
   "sudo docker rm prometheus 2>/dev/null || true",
@@ -120,6 +130,7 @@ COMMANDS_JSON='[
   "sudo docker run -d --name grafana --restart unless-stopped --network monitoring -p 3000:3000 -e GF_SECURITY_ADMIN_PASSWORD=admin -e GF_USERS_ALLOW_SIGN_UP=false -v /opt/monitoring/grafana-provisioning:/etc/grafana/provisioning:ro -v /opt/monitoring/grafana-dashboards:/var/lib/grafana/dashboards:ro grafana/grafana:latest",
   "echo \"Monitoring stack deployed successfully!\"",
   "echo \"Prometheus: http://'${PUBLIC_IP}':9090\"",
+  "echo \"Alertmanager: http://'${PUBLIC_IP}':9093\"",
   "echo \"Grafana: http://'${PUBLIC_IP}':3000 (admin/admin)\""
 ]'
 
@@ -161,7 +172,8 @@ fi
 echo "✅ Monitoring stack deployed successfully!"
 echo ""
 echo "Access your monitoring:"
-echo "  Prometheus: http://$PUBLIC_IP:9090"
-echo "  Grafana:    http://$PUBLIC_IP:3000 (admin/admin)"
+echo "  Prometheus:    http://$PUBLIC_IP:9090"
+echo "  Alertmanager:  http://$PUBLIC_IP:9093"
+echo "  Grafana:       http://$PUBLIC_IP:3000 (admin/admin)"
 echo "  Node Exporter: http://$PUBLIC_IP:9100/metrics"
-echo "  cAdvisor:   http://$PUBLIC_IP:8080"
+echo "  cAdvisor:      http://$PUBLIC_IP:8080"

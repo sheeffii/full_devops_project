@@ -53,6 +53,14 @@ resource "aws_security_group" "allow_access" {
     cidr_blocks = ["0.0.0.0/0"]  # For Grafana UI
   }
 
+  ingress {
+    description = "Allow Alertmanager"
+    from_port   = 9093
+    to_port     = 9093
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # For Alertmanager UI
+  }
+
   egress {
     description = "Allow all outbound traffic"
     from_port   = 0

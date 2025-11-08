@@ -74,11 +74,39 @@ sudo docker restart cadvisor
 
 Check: http://<ec2-ip>:9090/alerts
 
-Alerts configured:
-- Node Exporter Down (>2 min)
-- High CPU (>80%, 5 min)
-- High Memory (>85%, 5 min)
-- Low Disk (<15%, 5 min)
+### Configured Alerts (infrastructure/monitoring/configs/alert.rules.yml)
+
+**Node Exporter Alerts:**
+- **NodeExporterDown**: Triggers when Node Exporter is unreachable for >2 minutes (CRITICAL)
+- **HighCPUUsage**: CPU usage >80% for 5 minutes (WARNING)
+- **HighMemoryUsage**: Memory usage >85% for 5 minutes (WARNING)
+- **LowDiskSpace**: Root disk space <15% for 5 minutes (WARNING)
+
+**cAdvisor Alerts:**
+- **CAdvisorDown**: Triggers when cAdvisor is unreachable for >2 minutes (CRITICAL)
+
+### Alert Rule Details
+
+```yaml
+# View current alert rules
+curl http://<ec2-ip>:9090/api/v1/rules | jq '.data.groups[].rules[] | {alert: .name, state: .state}'
+
+# Check firing alerts
+curl http://<ec2-ip>:9090/api/v1/alerts | jq '.data.alerts[] | {alert: .labels.alertname, state: .state}'
+```
+
+### Alert Configuration
+
+Alert rules are loaded from `infrastructure/monitoring/configs/alert.rules.yml` into Prometheus during deployment via S3:
+```bash
+# Deployed to EC2 at:
+/opt/monitoring/prometheus/alert.rules.yml
+```
+
+**Note**: Alerts are defined but no Alertmanager is configured. To receive notifications:
+1. Deploy Alertmanager container
+2. Configure receivers (email, Slack, Discord, PagerDuty)
+3. Update prometheus.yml with alertmanager targets
 
 ## Ports Reference
 
@@ -98,8 +126,16 @@ Alerts configured:
 ├── prometheus/
 │   ├── prometheus.yml
 │   └── alert.rules.yml
-└── grafana-dashboards/
-    ├── 1860_rev42.json
+├── alertmanager/
+│   └── alertmanager.yml
+├── grafana-provisioning/
+│   ├── datasources/
+│   │   └── prometheus.yml
+│   └── dashboards/
+│       └── dashboard.yml
+├── grafana-dashboards/
+│   └── 1860_rev42.json
+└── discord-webhook-proxy.py
 ```
 
 ## Quick Tests

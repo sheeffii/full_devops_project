@@ -44,6 +44,6 @@ else
 fi
 
 log "Ensuring monitoring containers are running (if present)..."
-docker start prometheus grafana node-exporter cadvisor 2>/dev/null || true
+docker start prometheus grafana node-exporter cadvisor alertmanager discord-proxy 2>/dev/null || true
 
 log "Redeploy complete!"
