@@ -116,7 +116,7 @@ read -r -d '' COMMANDS_JSON <<'EOF' || true
   "sleep 2",
   "if ! sudo docker ps | grep -q cadvisor; then echo \"ERROR: cAdvisor failed to start\"; sudo docker logs cadvisor 2>&1 || true; fi",
   "# Deploy Discord Webhook Proxy (if webhook URL provided)",
-  "if [ -n \"${DISCORD_WEBHOOK_URL}\" ] && [ -f /opt/monitoring/discord-webhook-proxy.py ]; then sudo docker stop discord-proxy 2>/dev/null || true; sudo docker rm discord-proxy 2>/dev/null || true; sudo docker run -d --name discord-proxy --restart unless-stopped --network monitoring -p 9094:9094 -v /opt/monitoring:/app:ro -e DISCORD_WEBHOOK_URL=\"${DISCORD_WEBHOOK_URL}\" python:3.11-slim sh -c \"pip install --quiet --no-cache-dir requests && python /app/discord-webhook-proxy.py\"; else echo \"Skipping Discord proxy (no webhook URL or script missing)\"; fi",
+  "if [ -n \"${DISCORD_WEBHOOK_URL}\" ] && [ -f /opt/monitoring/discord-webhook-proxy.py ]; then sudo docker stop discord-proxy 2>/dev/null || true; sudo docker rm discord-proxy 2>/dev/null || true; sudo docker run -d --name discord-proxy --restart unless-stopped --network monitoring -p 9094:9094 -v /opt/monitoring:/app:ro -e DISCORD_WEBHOOK_URL=\"${DISCORD_WEBHOOK_URL}\" -e PIP_DISABLE_PIP_VERSION_CHECK=1 -e PYTHONUNBUFFERED=1 -e PIP_ROOT_USER_ACTION=ignore python:3.11-slim sh -c \"pip install --quiet --no-cache-dir requests && python /app/discord-webhook-proxy.py\"; else echo \"Skipping Discord proxy (no webhook URL or script missing)\"; fi",
   "# Deploy Alertmanager",
   "sudo docker stop alertmanager 2>/dev/null || true",
   "sudo docker rm alertmanager 2>/dev/null || true",

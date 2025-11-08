@@ -134,38 +134,48 @@ class AlertmanagerHandler(BaseHTTPRequestHandler):
         return embeds
     
     def send_to_discord(self, embeds):
-        """Send embeds to Discord webhook"""
-        payload = {
-            "username": "Prometheus Alert",
-            "embeds": embeds
-        }
-
+        """Send embeds to Discord webhook (one at a time to avoid limits)"""
         headers = {
             'Content-Type': 'application/json; charset=utf-8',
             'Accept': 'application/json',
-            # Use a non-suspicious UA to avoid Cloudflare 403 (error 1010)
             'User-Agent': 'DiscordBot (https://github.com/team7/full_devops_project, 1.0)'
         }
 
-        try:
-            resp = requests.post(DISCORD_WEBHOOK_URL, json=payload, headers=headers, timeout=10)
-            if 200 <= resp.status_code < 300:
-                # Discord typically returns 204 No Content on success
-                print("✅ Discord notification sent successfully")
-                return
-            # If embeds failed (e.g., Cloudflare 1010), try a minimal content-only fallback
-            print(f"⚠️ Discord webhook returned status {resp.status_code} on embeds: {resp.text}", file=sys.stderr)
-            fallback = {
-                "content": self._fallback_text_from_embeds(embeds) or "Prometheus alert"
+        # Discord limits: max 10 embeds per message, max 25 fields per embed
+        # Send embeds one at a time for better reliability
+        for i, embed in enumerate(embeds):
+            # Limit fields to 25 (Discord max)
+            if len(embed.get('fields', [])) > 25:
+                embed['fields'] = embed['fields'][:25]
+            
+            # Ensure field values aren't too long (Discord max 1024 per field value)
+            for field in embed.get('fields', []):
+                if len(field.get('value', '')) > 1024:
+                    field['value'] = field['value'][:1021] + '...'
+            
+            payload = {
+                "username": "Prometheus Alert",
+                "embeds": [embed]  # Single embed per request
             }
-            resp2 = requests.post(DISCORD_WEBHOOK_URL, json=fallback, headers=headers, timeout=10)
-            if 200 <= resp2.status_code < 300:
-                print("✅ Discord notification sent via content fallback")
-                return
-            print(f"❌ Discord webhook fallback failed: {resp2.status_code} {resp2.text}", file=sys.stderr)
-        except requests.RequestException as e:
-            print(f"❌ Failed to send Discord notification: {e}", file=sys.stderr)
-            raise
+
+            try:
+                resp = requests.post(DISCORD_WEBHOOK_URL, json=payload, headers=headers, timeout=10)
+                if 200 <= resp.status_code < 300:
+                    print(f"✅ Discord notification sent successfully (embed {i+1}/{len(embeds)})")
+                    continue
+                
+                # If embed failed, try content fallback for this alert
+                print(f"⚠️ Embed {i+1} failed with {resp.status_code}: {resp.text[:200]}", file=sys.stderr)
+                fallback = {
+                    "content": self._fallback_text_from_embeds([embed]) or "Prometheus alert"
+                }
+                resp2 = requests.post(DISCORD_WEBHOOK_URL, json=fallback, headers=headers, timeout=10)
+                if 200 <= resp2.status_code < 300:
+                    print(f"✅ Discord notification sent via fallback (alert {i+1}/{len(embeds)})")
+                else:
+                    print(f"❌ Fallback also failed for alert {i+1}: {resp2.status_code}", file=sys.stderr)
+            except requests.RequestException as e:
+                print(f"❌ Failed to send alert {i+1}: {e}", file=sys.stderr)
 
     def _fallback_text_from_embeds(self, embeds):
         try:
