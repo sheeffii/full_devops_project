@@ -90,16 +90,17 @@ else
   echo "⚠️  grafana-dashboards/ not found — no dashboards will be uploaded"
 fi
 
-# Define commands as a JSON array (fix for AWS CLI parsing)
-COMMANDS_JSON='[
+# Define commands as a JSON array (using here-doc for better readability and quoting)
+read -r -d '' COMMANDS_JSON <<'EOF' || true
+[
   "# Download monitoring configs from S3",
   "sudo mkdir -p /opt/monitoring/{prometheus,alertmanager,grafana-provisioning,grafana-dashboards}",
-  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/prometheus.yml /opt/monitoring/prometheus/prometheus.yml",
-  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/alert.rules.yml /opt/monitoring/prometheus/alert.rules.yml || true",
-  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/alertmanager.yml /opt/monitoring/alertmanager/alertmanager.yml || true",
-  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/discord-webhook-proxy.py /opt/monitoring/discord-webhook-proxy.py || true",
-  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/grafana-provisioning/ /opt/monitoring/grafana-provisioning/ --recursive || true",
-  "aws s3 cp s3://'${STATE_BUCKET}'/'${MONITORING_PREFIX}'/grafana-dashboards/ /opt/monitoring/grafana-dashboards/ --recursive || true",
+  "aws s3 cp s3://${STATE_BUCKET}/${MONITORING_PREFIX}/prometheus.yml /opt/monitoring/prometheus/prometheus.yml",
+  "aws s3 cp s3://${STATE_BUCKET}/${MONITORING_PREFIX}/alert.rules.yml /opt/monitoring/prometheus/alert.rules.yml || true",
+  "aws s3 cp s3://${STATE_BUCKET}/${MONITORING_PREFIX}/alertmanager.yml /opt/monitoring/alertmanager/alertmanager.yml || true",
+  "aws s3 cp s3://${STATE_BUCKET}/${MONITORING_PREFIX}/discord-webhook-proxy.py /opt/monitoring/discord-webhook-proxy.py || true",
+  "aws s3 cp s3://${STATE_BUCKET}/${MONITORING_PREFIX}/grafana-provisioning/ /opt/monitoring/grafana-provisioning/ --recursive || true",
+  "aws s3 cp s3://${STATE_BUCKET}/${MONITORING_PREFIX}/grafana-dashboards/ /opt/monitoring/grafana-dashboards/ --recursive || true",
   "sudo chmod -R u=rwX,go=rX /opt/monitoring/",
   "sudo chmod +x /opt/monitoring/discord-webhook-proxy.py || true",
   "# Create Docker network for monitoring",
@@ -113,9 +114,9 @@ COMMANDS_JSON='[
   "sudo docker rm cadvisor 2>/dev/null || true",
   "sudo docker run -d --name cadvisor --restart unless-stopped --network monitoring -p 8080:8080 --volume=/:/rootfs:ro --volume=/var/run:/var/run:rw --volume=/sys:/sys:ro --volume=/var/lib/docker/:/var/lib/docker:ro --volume=/dev/disk/:/dev/disk:ro --privileged gcr.io/cadvisor/cadvisor:latest",
   "sleep 2",
-  "if ! sudo docker ps | grep -q cadvisor; then echo ERROR: cAdvisor failed to start; sudo docker logs cadvisor 2>&1 || true; fi",
+  "if ! sudo docker ps | grep -q cadvisor; then echo \"ERROR: cAdvisor failed to start\"; sudo docker logs cadvisor 2>&1 || true; fi",
   "# Deploy Discord Webhook Proxy (if webhook URL provided)",
-  "if [ -n '\"'\"'${DISCORD_WEBHOOK_URL}'\"'\"' ] && [ -f /opt/monitoring/discord-webhook-proxy.py ]; then sudo docker stop discord-proxy 2>/dev/null || true; sudo docker rm discord-proxy 2>/dev/null || true; sudo docker run -d --name discord-proxy --restart unless-stopped --network monitoring -p 9094:9094 -v /opt/monitoring:/app:ro -e DISCORD_WEBHOOK_URL='\"'\"'${DISCORD_WEBHOOK_URL}'\"'\"' python:3.11-slim sh -c '\"'\"'pip install --quiet --no-cache-dir requests && python /app/discord-webhook-proxy.py'\"'\"'; else echo '\"'\"'Skipping Discord proxy (no webhook URL or script missing)'\"'\"'; fi",
+  "if [ -n \"${DISCORD_WEBHOOK_URL}\" ] && [ -f /opt/monitoring/discord-webhook-proxy.py ]; then sudo docker stop discord-proxy 2>/dev/null || true; sudo docker rm discord-proxy 2>/dev/null || true; sudo docker run -d --name discord-proxy --restart unless-stopped --network monitoring -p 9094:9094 -v /opt/monitoring:/app:ro -e DISCORD_WEBHOOK_URL=\"${DISCORD_WEBHOOK_URL}\" python:3.11-slim sh -c \"pip install --quiet --no-cache-dir requests && python /app/discord-webhook-proxy.py\"; else echo \"Skipping Discord proxy (no webhook URL or script missing)\"; fi",
   "# Deploy Alertmanager",
   "sudo docker stop alertmanager 2>/dev/null || true",
   "sudo docker rm alertmanager 2>/dev/null || true",
@@ -129,10 +130,17 @@ COMMANDS_JSON='[
   "sudo docker rm grafana 2>/dev/null || true",
   "sudo docker run -d --name grafana --restart unless-stopped --network monitoring -p 3000:3000 -e GF_SECURITY_ADMIN_PASSWORD=admin -e GF_USERS_ALLOW_SIGN_UP=false -v /opt/monitoring/grafana-provisioning:/etc/grafana/provisioning:ro -v /opt/monitoring/grafana-dashboards:/var/lib/grafana/dashboards:ro grafana/grafana:latest",
   "echo \"Monitoring stack deployed successfully!\"",
-  "echo \"Prometheus: http://'${PUBLIC_IP}':9090\"",
-  "echo \"Alertmanager: http://'${PUBLIC_IP}':9093\"",
-  "echo \"Grafana: http://'${PUBLIC_IP}':3000 (admin/admin)\""
-]'
+  "echo \"Prometheus: http://${PUBLIC_IP}:9090\"",
+  "echo \"Alertmanager: http://${PUBLIC_IP}:9093\"",
+  "echo \"Grafana: http://${PUBLIC_IP}:3000 (admin/admin)\""
+]
+EOF
+
+# Perform variable substitution in the JSON
+COMMANDS_JSON="${COMMANDS_JSON//\$\{STATE_BUCKET\}/${STATE_BUCKET}}"
+COMMANDS_JSON="${COMMANDS_JSON//\$\{MONITORING_PREFIX\}/${MONITORING_PREFIX}}"
+COMMANDS_JSON="${COMMANDS_JSON//\$\{DISCORD_WEBHOOK_URL\}/${DISCORD_WEBHOOK_URL}}"
+COMMANDS_JSON="${COMMANDS_JSON//\$\{PUBLIC_IP\}/${PUBLIC_IP}}"
 
 # Deploy monitoring stack via SSM
 COMMAND_ID=$(aws ssm send-command \
