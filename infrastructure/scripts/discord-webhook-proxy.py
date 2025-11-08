@@ -93,7 +93,7 @@ class AlertmanagerHandler(BaseHTTPRequestHandler):
                         "inline": True
                     }
                 ],
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
             }
             
             # Add description if available
@@ -125,7 +125,6 @@ class AlertmanagerHandler(BaseHTTPRequestHandler):
         """Send embeds to Discord webhook"""
         payload = {
             "username": "Prometheus Alert",
-            "avatar_url": "https://prometheus.io/assets/prometheus_logo_grey.svg",
             "embeds": embeds
         }
         
