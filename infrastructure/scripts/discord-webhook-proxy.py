@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import urllib.request
+import urllib.error
 from datetime import datetime
 
 DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
@@ -135,9 +136,21 @@ class AlertmanagerHandler(BaseHTTPRequestHandler):
             headers={'Content-Type': 'application/json'}
         )
         
-        with urllib.request.urlopen(req) as response:
-            if response.status != 204:
-                print(f"Discord webhook returned status {response.status}", file=sys.stderr)
+        try:
+            with urllib.request.urlopen(req) as response:
+                if response.status == 204:
+                    print(f"✅ Discord notification sent successfully")
+                else:
+                    print(f"⚠️ Discord webhook returned status {response.status}", file=sys.stderr)
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode('utf-8') if e.fp else 'No error details'
+            print(f"❌ Discord API error {e.code}: {e.reason}", file=sys.stderr)
+            print(f"   Webhook URL (first 60 chars): {DISCORD_WEBHOOK_URL[:60]}...", file=sys.stderr)
+            print(f"   Response: {error_body}", file=sys.stderr)
+            raise
+        except Exception as e:
+            print(f"❌ Failed to send Discord notification: {e}", file=sys.stderr)
+            raise
     
     def log_message(self, format, *args):
         """Override to reduce logging noise"""
