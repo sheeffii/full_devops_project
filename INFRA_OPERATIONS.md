@@ -1,8 +1,28 @@
 # Infrastructure & Automation Runbook
 
-This is the end‑to‑end guide for how the infrastructure, AMI (Packer), monitoring, and deployments work in this repo. It’s focused on practical operations: what’s automated, what secrets are needed and why, what gets triggered when, and how to verify or destroy cleanly.
+This is the end‑to‑end guide for how the infrastructure, AMI (Packer), monitoring, and deployments work in this repo. It's focused on practical operations: what's automated, what secrets are needed and why, what gets triggered when, and how to verify or destroy cleanly.
 
-If you’re just joining the project, start here.
+If you're just joining the project, start here.
+
+---
+
+## Performance Statistics (From Zero to Production)
+
+**Complete deployment time (from scratch):**
+- Infrastructure deployment: **~8m 10s**
+  - Includes: Terraform backend bootstrap, AMI build (if needed), EC2 + networking, monitoring stack, auto-redeploy service
+- App deployment: **~1m 40s**
+  - Docker build, ECR push, SSM deployment to EC2
+- Discord Bot deployment: **~1m 39s**
+  - Docker build, ECR push, SSM deployment to EC2
+
+**Total time from zero to fully operational AWS infrastructure with monitoring and applications: ~10-12 minutes**
+
+**Complete teardown:**
+- Destroy all infrastructure: **~1m 54s**
+  - Includes: EC2, networking, ECR (with force delete), S3 state bucket cleanup, DynamoDB lock table, AMI + snapshots
+
+**Key advantage:** Fully automated end-to-end. Push to main branch and within 10 minutes you have a production-ready environment with monitoring, alerts, and both applications running. Single workflow dispatch destroys everything cleanly in under 2 minutes.
 
 ---
 
