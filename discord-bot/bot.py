@@ -86,7 +86,7 @@ async def on_ready():
     description="🚀 Deploy infrastructure to AWS"
 )
 async def deploy(interaction: discord.Interaction):
-    """Deploy infrastructure via GitHub Actions"""
+    """Deploy infrastructure via GitHub Actions """
     await interaction.response.defer(thinking=True)
     
     result = await github.trigger_workflow("infra-makefile.yml", "deploy")
