@@ -63,7 +63,7 @@ build {
 
   provisioner "shell" {
     inline = [
-      "set -e", // Exit immediately on any command failure.
+      "set -e", // Exit immediately on any command failure
       "sudo dnf update -y",
       # Install SSM agent (Amazon Linux 2023) and ensure it's running
       "sudo dnf install -y amazon-ssm-agent || sudo yum install -y amazon-ssm-agent || true",

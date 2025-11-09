@@ -33,7 +33,7 @@ resource "aws_ecr_lifecycle_policy" "app_lifecycle" {
 resource "aws_ecr_repository" "discord_bot_repo" {
   name                 = "discord-bot"
   image_tag_mutability = "MUTABLE"
-  force_delete = true            # Allow deletion even if not empty/
+  force_delete = true            # Allow deletion even if not empty
 
   image_scanning_configuration {
     scan_on_push = true
