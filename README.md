@@ -16,6 +16,7 @@ Complete DevOps CI/CD pipeline with Infrastructure as Code, automated monitoring
 
 - [Project Overview](#project-overview)
 - [Key Features](#key-features)
+- [Performance](#performance)
 - [Architecture](#architecture)
 - [Screenshots](#-screenshots)
 - [Technologies](#technologies)
@@ -60,6 +61,31 @@ This project demonstrates a production-ready DevOps workflow with complete autom
 - **Private Registry**: AWS ECR for secure Docker image storage
 - **Auto-Restart on Boot**: Systemd service ensures applications restart after EC2 reboots
 - **Health Checks**: Automated health endpoint monitoring
+
+## ⚡ Performance at a glance
+
+From a push to a live, monitored stack — fully automated:
+
+## 🚀 **Execution Summary**
+
+| **Component**        | ⏱️ **Duration** |
+|----------------------|----------------|
+| 🧱 **Infrastructure** | ~8m 10s         |
+| 🖥️ **Application**    | ~1m 40s         |
+| 🤖 **Discord Bot**     | ~1m 39s         |
+| 🕒 **Total Time**      | **~10–12 min**  |
+| 💥 **Destroy All**     | ~1m 54s         |
+
+---
+
+Timeline
+Start → Infra (~ 8m) → App (~ 1m40s) → Bot (~1m39s) → Done
+
+Notes
+- Infra includes backend bootstrap, AMI (if needed), EC2/networking, monitoring stack, auto‑redeploy service.
+- App/Bot include Docker build, ECR push, and SSM deployment to EC2.
+
+**For the complete runbook and operational details, see [INFRA_OPERATIONS.md](INFRA_OPERATIONS.md).**
 
 ## 🏛️ Architecture
 
