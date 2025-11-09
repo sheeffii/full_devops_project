@@ -32,14 +32,17 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.13.4"
-      - uses: actions/cache@v4
+      - name: Configure Terraform plugin cache directory
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo 'plugin_cache_dir = "~/.terraform.d/plugin-cache"' > ~/.terraformrc
+      - name: Cache Terraform plugins
+        uses: actions/cache@v4
         with:
           path: ~/.terraform.d/plugin-cache
-          key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }} # Fast if unchanged
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/packer
-          key: ${{ runner.os }}-packer-${{ hashFiles('infrastructure/packer/**/*.pkr.hcl') }} # Fast if unchanged
+          key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/dev/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-tf-
       - name: Terraform Format Check
         working-directory: ./infrastructure/dev
         run: terraform fmt -check -recursive
@@ -84,12 +87,14 @@ jobs:
       - name: Verify AWS credentials
         if: steps.packer-changes.outputs.any_changed == 'true'
         run: aws sts get-caller-identity
-      
-      - uses: actions/cache@v4
+      - name: Cache Packer plugins
         if: steps.packer-changes.outputs.any_changed == 'true'
+        uses: actions/cache@v4
         with:
           path: ~/.cache/packer
           key: ${{ runner.os }}-packer-${{ hashFiles('infrastructure/packer/**/*.pkr.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-packer-
       
       - name: Make AMI
         if: steps.packer-changes.outputs.any_changed == 'true'
@@ -144,12 +149,19 @@ jobs:
         if: steps.infra-changes.outputs.any_changed == 'true'
         with:
           terraform_version: "1.13.4"
-      
-      - uses: actions/cache@v4
+      - name: Configure Terraform plugin cache directory
         if: steps.infra-changes.outputs.any_changed == 'true'
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo 'plugin_cache_dir = "~/.terraform.d/plugin-cache"' > ~/.terraformrc
+      - name: Cache Terraform plugins
+        if: steps.infra-changes.outputs.any_changed == 'true'
+        uses: actions/cache@v4
         with:
           path: ~/.terraform.d/plugin-cache
-          key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }}
+          key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/dev/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-tf-
       
       - name: Deploy
         if: steps.infra-changes.outputs.any_changed == 'true'
@@ -287,10 +299,17 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.13.4"
-      - uses: actions/cache@v4
+      - name: Configure Terraform plugin cache directory
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo 'plugin_cache_dir = "~/.terraform.d/plugin-cache"' > ~/.terraformrc
+      - name: Cache Terraform plugins
+        uses: actions/cache@v4
         with:
           path: ~/.terraform.d/plugin-cache
-          key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/**/*.tf') }}
+          key: ${{ runner.os }}-tf-${{ hashFiles('infrastructure/dev/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-tf-
       - name: Destroy
         working-directory: ./infrastructure
         run: make destroy AUTO=yes # Non-interactive for CI
