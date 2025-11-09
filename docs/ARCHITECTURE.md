@@ -194,8 +194,8 @@ Output: Custom AMI with ID stored for Terraform
 
 | Script | Purpose |
 |--------|---------|
-| `install_docker.sh` | Docker installation (used by Packer) |
-| `deploy_monitoring.sh` | Deploys Prometheus, Grafana, exporters via SSM |
+| `deploy_monitoring.sh` | Deploys Prometheus, Grafana, Alertmanager, exporters via SSM |
+| `discord-webhook-proxy.py` | Discord webhook integration for alert notifications |
 | `install_redeploy_service.sh` | Installs systemd service for auto-container restart |
 | `redeploy_on_boot.sh` | Pulls latest images and restarts containers on boot |
 

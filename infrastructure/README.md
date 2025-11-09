@@ -13,20 +13,43 @@ infrastructure/
 ├── dev/                    # Main infrastructure
 │   ├── backend.tf         # Remote state configuration
 │   ├── ec2.tf            # EC2 instance with Docker
+│   ├── ecr.tf            # ECR repositories for Docker images
 │   ├── iam.tf            # IAM roles and policies
+│   ├── iam-ci.tf         # IAM policies for CI/CD (GitHub Actions)
+│   ├── team-iam.tf       # Team member IAM users and policies
 │   ├── keypair.tf        # SSH key management for team access
 │   ├── locals.tf         # Local variables and data sources
 │   ├── main.tf           # Provider configuration
 │   ├── outputs.tf        # Public IP and connection info
 │   ├── s3.tf            # S3 bucket for logs/backups
-│   ├── security_group.tf # Firewall rules (ports 22, 80, 9100)
+│   ├── security_group.tf # Firewall rules (22, 80, 3000, 8080, 9090, 9093, 9100)
 │   ├── variables.tf      # Input variable definitions
+│   ├── add_team_keys.sh  # User data script to add team SSH keys
 │   └── example.tfvars    # Example variable values for team use
 ├── packer/               # AMI building
 │   ├── packer-docker-ami.pkr.hcl  # Docker-ready AMI template
 │   └── packer-manifest.json       # Build output (generated)
-└── scripts/
-    └── install_docker.sh  # Docker installation script
+├── monitoring/           # Monitoring stack configuration
+│   ├── docker-compose.yml         # Local monitoring stack (optional)
+│   ├── README.md                  # Monitoring setup documentation
+│   ├── configs/                   # Prometheus, Alertmanager, alert rules
+│   │   ├── prometheus.yml
+│   │   ├── alert.rules.yml
+│   │   └── alertmanager.yml
+│   ├── grafana-provisioning/      # Auto-provisioned datasources
+│   │   ├── datasources/
+│   │   │   └── prometheus.yml
+│   │   └── dashboards/
+│   │       └── dashboard.yml
+│   └── grafana-dashboards/        # Pre-configured dashboards (JSON)
+│       └── 1860_rev42.json        # Node Exporter Full dashboard
+├── scripts/
+│   ├── deploy_monitoring.sh       # Monitoring stack deployment via SSM
+│   ├── discord-webhook-proxy.py   # Discord alert integration
+│   ├── redeploy_on_boot.sh       # Auto-restart service script
+│   └── install_redeploy_service.sh # Systemd service installer
+└── systemd/
+    └── redeploy-on-boot.service   # Systemd unit file for auto-redeploy
 
 ## Prerequisites
 
@@ -70,17 +93,19 @@ infrastructure/
 
 The infrastructure supports multiple team members accessing the EC2 instance:
 
-1. Edit `dev/team.tfvars` to add team members' SSH public keys:
+1. Edit `dev/team.tfvars` to add team members' SSH public keys (inline format):
    ```hcl
    ssh_public_keys = {
-     alice = "C:/Users/Alice/.ssh/id_rsa.pub"
-     bob   = "C:/Users/Bob/.ssh/id_rsa.pub"
+     shefqet = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... shefqet@TEAM"
+     alice   = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... alice@TEAM"
+     bob     = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... bob@TEAM"
    }
    ```
 
-2. Set `current_user` in tfvars or via CLI to determine which key is used for the EC2 instance:
+2. The `add_team_keys.sh` user_data script automatically adds all team keys to EC2 on launch.
+   Each team member can then SSH using their private key:
    ```bash
-   terraform apply -var-file=team.tfvars -var="current_user=alice"
+   ssh -i ~/.ssh/id_rsa ec2-user@<EC2_PUBLIC_IP>
    ```
 
 ## Infrastructure Components
@@ -99,13 +124,24 @@ The infrastructure supports multiple team members accessing the EC2 instance:
 ### 3. Main Infrastructure (dev/)
 - EC2 instance using custom Docker AMI
 - Elastic IP for stable access
-- Security group with ports 22 (SSH), 80 (HTTP), 9100 (metrics)
-- IAM role with instance profile
-- S3 bucket for logs/backups
+- Security group with 7 ports: 22 (SSH), 80 (HTTP), 3000 (Grafana), 8080 (cAdvisor), 9090 (Prometheus), 9093 (Alertmanager), 9100 (Node Exporter)
+- IAM roles with instance profile
+- ECR repositories for Docker images
+- S3 bucket for logs/backups and monitoring configs
 - Team SSH key management
 - Remote state configuration
 
-### 4. Auto-Redeploy Service (Optional)
+### 4. Monitoring Stack (monitoring/)
+- **Prometheus**: Metrics collection and alerting (port 9090)
+- **Alertmanager**: Alert routing and notification (port 9093)
+- **Grafana**: Visualization dashboards (port 3000)
+- **Node Exporter**: System metrics (port 9100)
+- **cAdvisor**: Container metrics (port 8080)
+- **Discord Integration**: Custom webhook proxy for alert notifications
+- Deployed via `deploy_monitoring.sh` script using AWS SSM
+- Configs stored in S3 and pulled to EC2 at deployment time
+
+### 5. Auto-Redeploy Service (Optional)
 - Systemd service that auto-redeploys app on EC2 reboot
 - Automatically installed via CI/CD pipeline after infrastructure deployment
 - Files: `scripts/redeploy_on_boot.sh`, `systemd/redeploy-on-boot.service`
@@ -132,7 +168,7 @@ The auto-redeploy service ensures your app always runs the latest ECR image afte
    - Easy key rotation
 
 2. **Network Security**
-   - Limited open ports (22, 80, 9100)
+   - Limited open ports: 22 (SSH), 80 (HTTP), 3000 (Grafana), 8080 (cAdvisor), 9090 (Prometheus), 9093 (Alertmanager), 9100 (Node Exporter)
    - All other traffic blocked
    - EC2 in default VPC (customizable)
 
@@ -144,6 +180,7 @@ The auto-redeploy service ensures your app always runs the latest ECR image afte
 4. **IAM Security**
    - Minimal IAM roles
    - Instance profile for EC2
+   - CI/CD user with minimal ECR permissions
 
 ## Remote State Backend
 
@@ -247,14 +284,15 @@ terraform apply -var-file="example.tfvars"
 3. Example `example.tfvars` for team SSH keys (place under `infrastructure/dev/example.tfvars`):
 
 ```hcl
-aws_region     = "eu-north-1"
+aws_region     = "eu-central-1"
 ssh_public_keys = {
-   alice = "C:/Users/Alice/.ssh/id_rsa.pub"
-   bob   = "C:/Users/Bob/.ssh/id_rsa.pub"
+   shefqet = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... shefqet@TEAM"
+   alice   = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... alice@TEAM"
+   bob     = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... bob@TEAM"
 }
-instance_type  = "t3.micro"
-current_user = "alice"
-private_key_path = "C:/Users/Alice/.ssh/id_rsa" # optional, for provisioner
+instance_type    = "t3.micro"
+private_key_path = "~/.ssh/id_rsa"  # optional, for provisioner
+ci_user_name     = "github-deploy-bot"  # IAM user for CI/CD
 tags = {
    Name        = "dev-infra"
    Owner       = "dev-team"
