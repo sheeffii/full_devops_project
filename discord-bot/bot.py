@@ -83,7 +83,7 @@ async def on_ready():
 
 @tree.command(
     name="deploy",
-    description="🚀 Deploy infrastructure to AWS"
+    description="🚀 Deploy infrastructure to AWS..."
 )
 async def deploy(interaction: discord.Interaction):
     """Deploy infrastructure via GitHub Actions """

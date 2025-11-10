@@ -8,8 +8,21 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-    const currentTime = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Prague' });
-    res.send(`Hello! This is the Team-7 app <br>🕒 Current time: <strong>${currentTime}</strong>`);
+    res.send(`
+        <html>
+        <body>
+            <h1>Hello! This is the Team-7 app.</h1>
+            <p>🕒 Current time in Prague: <span id="clock"></span></p>
+
+            <script>
+                setInterval(() => {
+                    const time = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Prague' });
+                    document.getElementById('clock').textContent = time;
+                }, 1000);
+            </script>
+        </body>
+        </html>
+    `);
 });
 
 app.listen(port, () => {
