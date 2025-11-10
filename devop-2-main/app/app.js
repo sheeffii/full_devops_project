@@ -12,7 +12,7 @@ app.get('/', (req, res) => {
         <html>
         <body>
             <h1>Hello! This is the Team-7 app.</h1>
-            <p>🕒 Current time in Prague: <span id="clock"></span></p>
+            <p>🕒 Current time in Kosovë: <span id="clock"></span></p>
 
             <script>
                 setInterval(() => {
