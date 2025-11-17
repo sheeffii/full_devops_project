@@ -89,6 +89,12 @@ Notes
 
 ## 🏛️ Architecture
 
+### Project Architecture Diagram
+
+![Project Architecture](docs/images/project_diagram.jpg)
+
+*Complete DevOps pipeline showing GitHub CI/CD, AWS infrastructure, containerized services, and monitoring stack with Discord alerting.*
+
 ### High-Level Architecture Flow
 ```
 ┌─────────────────────────────────────────────────────────────┐
